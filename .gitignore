@@ -1,3 +1,13 @@
 venv/
 __pycache__/
 .env
+bin/
+include/
+lib/
+pyvenv.cfg
+*.log
+failed_ids.txt
+data/raw/*.json
+check_gemini.py
+compare_taxonomy_v2.py
+taxonomy_v2_sample_checkpoint.json

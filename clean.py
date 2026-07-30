@@ -6,11 +6,13 @@ RAW_DIR = Path("data/raw")
 OUTPUT_DIR = Path("data/clean")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-APP_FILES = [
-    ("blinkit", RAW_DIR / "blinkit.json"),
-    ("instamart", RAW_DIR / "instamart.json"),
-    ("zepto", RAW_DIR / "zepto.json"),
-]
+SOURCE_ALIASES = {
+    "playstore": "play_store",
+    "play_store": "play_store",
+    "appstore": "app_store",
+    "app_store": "app_store",
+    "reddit": "reddit",
+}
 
 
 def is_englishish(text: str, threshold: float = 0.3) -> bool:
@@ -37,12 +39,14 @@ def alphabetic_word_count(text: str) -> int:
 
 
 def normalize_record(record):
-    text = record.get("review") or record.get("content") or ""
-    rating = record.get("score")
-    date = record.get("date") or ""
-    app = record.get("app") or ""
+    text = record.get("text") or record.get("review") or record.get("content") or ""
+    rating = record.get("rating", record.get("score"))
+    date = record.get("date") or record.get("review_date") or ""
+    app = record.get("app") or "blinkit"
+    source = record.get("source") or ""
 
     return {
+        "source": source,
         "app": app,
         "text": text,
         "rating": rating,
@@ -50,25 +54,42 @@ def normalize_record(record):
     }
 
 
+def infer_source(file_path: Path, record: dict) -> str:
+    source = str(record.get("source") or "").strip()
+    if source:
+        return source
+    return SOURCE_ALIASES.get(file_path.stem.lower(), file_path.stem.lower())
+
+
 if __name__ == "__main__":
     all_records = []
-    started_count = 0
+    source_started = {}
+    source_final = {}
     short_text_dropped = 0
     non_english_dropped = 0
     low_word_count_dropped = 0
     duplicate_dropped = 0
 
-    for app_name, file_path in APP_FILES:
-        if not file_path.exists():
-            print(f"Missing file for {app_name}: {file_path}")
+    raw_files = sorted(RAW_DIR.glob("*.json"))
+    if not raw_files:
+        print(f"No raw JSON files found in {RAW_DIR}")
+
+    for file_path in raw_files:
+        try:
+            with file_path.open("r", encoding="utf-8") as handle:
+                raw_records = json.load(handle)
+        except json.JSONDecodeError as exc:
+            print(f"Skipping invalid JSON file {file_path.name}: {exc}")
             continue
 
-        with file_path.open("r", encoding="utf-8") as handle:
-            raw_records = json.load(handle)
+        if not raw_records:
+            continue
 
         for record in raw_records:
-            started_count += 1
+            source = infer_source(file_path, record)
+            source_started[source] = source_started.get(source, 0) + 1
             normalized = normalize_record(record)
+            normalized["source"] = source
 
             if len(normalized["text"]) < 25:
                 short_text_dropped += 1
@@ -94,13 +115,23 @@ if __name__ == "__main__":
         seen_texts.add(text)
         deduped_records.append(record)
 
+    for record in deduped_records:
+        source = record.get("source") or "unknown"
+        source_final[source] = source_final.get(source, 0) + 1
+
     output_path = OUTPUT_DIR / "reviews.json"
     with output_path.open("w", encoding="utf-8") as handle:
         json.dump(deduped_records, handle, ensure_ascii=False, indent=2)
 
-    print(f"Started with {started_count} records")
+    print("Starting count per source:")
+    for source, count in sorted(source_started.items()):
+        print(f"- {source}: {count}")
+
     print(f"Dropped for short text: {short_text_dropped}")
     print(f"Dropped for non-English-like text: {non_english_dropped}")
     print(f"Dropped for low alphabetic word count: {low_word_count_dropped}")
     print(f"Dropped as duplicates: {duplicate_dropped}")
-    print(f"Final count: {len(deduped_records)}")
+    print("Final count per source:")
+    for source, count in sorted(source_final.items()):
+        print(f"- {source}: {count}")
+    print(f"Final count total: {len(deduped_records)}")
