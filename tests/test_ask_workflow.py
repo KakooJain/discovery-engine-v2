@@ -15,6 +15,8 @@ def client(monkeypatch):
             "text": "hard to trust new category",
             "app": "Blinkit",
             "source": "play_store",
+            "date": "2026-07-30",
+            "url": "https://example.com/review/1",
             "supporting_quote": "hard to trust",
             "research_relevance": "discovery_relevant",
             "feedback_domain": "category_discovery",
@@ -46,30 +48,33 @@ def post_question(client, question="test question"):
 def test_success_response(client, monkeypatch):
     structured_answer = {
         "question": "test question",
-        "direct_answer": "Users rely on known-item cues when they can.",
         "insights": [
             {
                 "title": "Users rely on direct search",
-                "observation": "The evidence points to direct search behaviour.",
-                "why_it_matters": "This limits accidental discovery.",
-                "evidence_count": 1,
-                "eligible_record_count": 1,
-                "supporting_record_ids": [1],
-                "evidence_excerpts": [{"text": "hard to trust", "source": "Blinkit"}],
-                "product_opportunity": "Make discovery more visible.",
-                "confidence": "low",
+                "summary": "Users often navigate with a known target in mind and use direct lookup flows. This narrows incidental discovery.",
+                "supporting_evidence": [
+                    {
+                        "excerpt": "hard to trust",
+                        "source": "Blinkit",
+                        "date": "2026-07-30",
+                        "source_url": "https://example.com/review/1",
+                    },
+                    {
+                        "excerpt": "hard to trust",
+                        "source": "Blinkit",
+                        "date": "2026-07-30",
+                        "source_url": "https://example.com/review/1",
+                    },
+                ],
             }
-        ],
-        "contradictory_evidence": {"present": False, "summary": "No meaningful contradictory evidence found in the retrieved sample.", "record_count": 0},
-        "evidence_status": "limited",
-        "data_limitations": "Provisional result: 10 of 20 records classified.",
+        ]
     }
     monkeypatch.setattr(app_module, "_generate_research_answer", lambda *args, **kwargs: (structured_answer, [{"claim_text": "x"}]))
     response = post_question(client)
     assert response.status_code == 200
     body = response.get_json()
     assert body["status"] == "success"
-    assert body["answer"] == structured_answer["direct_answer"]
+    assert body["answer"] == ""
     assert body["answer_data"] == structured_answer
     assert body["sources_used"] == 1
     assert body["records_searched"] == 1
@@ -83,9 +88,86 @@ def test_quota_exceeded_returns_limited(client, monkeypatch):
     assert body["status"] == "limited"
     assert body["error_code"] == "llm_quota_exceeded"
     assert "Synthesis temporarily unavailable" in body["answer"]
-    assert body["answer_data"]["evidence_status"] == "limited"
+    assert "insights" in body["answer_data"]
     assert body["sources_used"] == 1
     assert len(body["evidence"]) == 1
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "What information do users need before trying a new category?",
+        "What prevents users from exploring new categories?",
+        "How do users discover products today?",
+        "Why do users order the same products repeatedly?",
+        "What frustrations emerge repeatedly?",
+    ],
+)
+def test_minimal_insight_schema_for_target_questions(client, monkeypatch, question):
+    answer_payload = {
+        "question": question,
+        "insights": [
+            {
+                "title": "Users seek concrete reassurance before trying unfamiliar products",
+                "summary": "People need enough specifics to judge risk before buying outside their routine. When that context is thin, they postpone exploration.",
+                "supporting_evidence": [
+                    {
+                        "excerpt": "hard to trust",
+                        "source": "Blinkit",
+                        "date": "2026-07-30",
+                        "source_url": "https://example.com/review/1",
+                    },
+                    {
+                        "excerpt": "hard to trust",
+                        "source": "Blinkit",
+                        "date": "2026-07-30",
+                        "source_url": "https://example.com/review/1",
+                    },
+                ],
+            },
+            {
+                "title": "Habitual reorder paths crowd out exploratory browsing",
+                "summary": "Users prioritize speed by repeating known items and known paths. That behavior reduces exposure to unfamiliar options.",
+                "supporting_evidence": [
+                    {
+                        "excerpt": "hard to trust",
+                        "source": "Blinkit",
+                        "date": "2026-07-30",
+                        "source_url": "https://example.com/review/1",
+                    },
+                    {
+                        "excerpt": "hard to trust",
+                        "source": "Blinkit",
+                        "date": "2026-07-30",
+                        "source_url": "https://example.com/review/1",
+                    },
+                ],
+            },
+        ],
+    }
+    monkeypatch.setattr(app_module, "_generate_research_answer", lambda *args, **kwargs: (answer_payload, []))
+
+    response = post_question(client, question=question)
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["status"] == "success"
+
+    answer_data = body["answer_data"]
+    assert answer_data["question"] == question
+    assert 2 <= len(answer_data["insights"]) <= 3
+    assert "direct_answer" not in answer_data
+    assert "data_limitations" not in answer_data
+    assert "evidence_status" not in answer_data
+
+    for insight in answer_data["insights"]:
+        assert insight.get("title")
+        assert insight.get("summary")
+        assert "why_it_matters" not in insight
+        assert "product_opportunity" not in insight
+        supporting = insight.get("supporting_evidence") or []
+        assert len(supporting) >= 1
+        for item in supporting:
+            assert item.get("excerpt")
 
 
 def test_retrieval_success_synthesis_failure_returns_evidence(client, monkeypatch):

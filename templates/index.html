@@ -313,50 +313,6 @@
       color: var(--text-soft);
     }
 
-    .selected-filters {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-
-    .selected-filter-chip {
-      border: 1px solid var(--line);
-      background: color-mix(in srgb, var(--accent) 7%, var(--surface));
-      color: var(--text-strong);
-      border-radius: 999px;
-      padding: 4px 10px;
-      font-size: 0.78rem;
-    }
-
-    .answer-summary-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 10px;
-      margin-bottom: 12px;
-    }
-
-    .summary-card {
-      border: 1px solid var(--line);
-      background: color-mix(in srgb, var(--accent) 7%, var(--surface));
-      padding: 10px 12px;
-      border-radius: 12px;
-    }
-
-    .summary-label {
-      font-size: 0.74rem;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--text-soft);
-      margin-bottom: 6px;
-    }
-
-    .summary-value {
-      font-weight: 700;
-      font-size: 1rem;
-      color: var(--text-strong);
-    }
-
     .answer-structure {
       display: grid;
       gap: 10px;
@@ -367,10 +323,6 @@
       background: var(--surface);
       padding: 12px 14px;
       border-radius: 12px;
-    }
-
-    .answer-section.compact {
-      border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
     }
 
     .answer-section-label {
@@ -432,28 +384,10 @@
       color: var(--text-strong);
     }
 
-    .insight-meta {
-      color: var(--text-soft);
-      font-size: 0.9rem;
-      line-height: 1.4;
-    }
-
-    .insight-section {
-      margin-top: 8px;
-    }
-
-    .insight-section p {
-      margin: 4px 0 0;
+    .insight-summary {
+      margin: 6px 0 0;
       color: var(--text-strong);
       line-height: 1.55;
-    }
-
-    .insight-metrics {
-      margin-top: 10px;
-      display: grid;
-      gap: 6px;
-      color: var(--text-soft);
-      font-size: 0.92rem;
     }
 
     .evidence-details {
@@ -500,62 +434,6 @@
       font-size: 0.86rem;
     }
 
-    .pull-quote {
-      margin: 12px 0;
-      padding: 10px 12px;
-      border-left: 4px solid var(--accent);
-      background: color-mix(in srgb, var(--accent) 8%, var(--surface));
-      font-family: var(--font-display);
-      font-size: 1.02rem;
-      line-height: 1.5;
-    }
-
-    .so-what {
-      margin: 12px 0 0;
-      border: 1px solid var(--line);
-      background: color-mix(in srgb, var(--accent) 10%, var(--surface));
-      padding: 9px 11px;
-      font-size: 0.93rem;
-      color: var(--text-strong);
-    }
-
-    .confidence {
-      display: inline-flex;
-      gap: 8px;
-      align-items: center;
-      border: 1px solid var(--line);
-      padding: 7px 10px;
-      margin-top: 4px;
-      font-size: 0.82rem;
-      background: var(--surface-soft);
-      border-radius: 999px;
-      white-space: nowrap;
-    }
-
-    .confidence-label {
-      font-weight: 700;
-      letter-spacing: 0.03em;
-      text-transform: uppercase;
-      border: 1px solid var(--line);
-      padding: 2px 6px;
-      background: var(--surface);
-    }
-
-    .confidence-low .confidence-label {
-      color: var(--bad);
-      border-color: color-mix(in srgb, var(--bad) 50%, var(--line));
-    }
-
-    .confidence-medium .confidence-label {
-      color: var(--warn);
-      border-color: color-mix(in srgb, var(--warn) 50%, var(--line));
-    }
-
-    .confidence-high .confidence-label {
-      color: var(--good);
-      border-color: color-mix(in srgb, var(--good) 50%, var(--line));
-    }
-
     .ask-meta {
       margin-top: 10px;
       font-size: 0.9rem;
@@ -564,6 +442,7 @@
       justify-content: space-between;
       gap: 12px;
       flex-wrap: wrap;
+      display: none;
     }
 
     .ask-note {
@@ -841,6 +720,7 @@
         "How do users discover products today?",
         "What information do users need before trying a new category?",
         "Why do users order the same products repeatedly?",
+        "What prevents users from exploring new categories?",
         "What frustrations emerge repeatedly?",
       ];
 
@@ -1042,13 +922,17 @@
           return '<div class="notice-card">No retrieved evidence rows were available.</div>';
         }
         return '<div class="insight-card"><h3 class="insight-title">Retrieved Evidence</h3>'
-          + evidenceRows.slice(0, 15).map(function (row, idx) {
+          + evidenceRows.slice(0, 8).map(function (row) {
             var text = String(row.text || "").trim();
             var quote = String(row.supporting_quote || "").trim();
+            var excerpt = quote || text || "(no text)";
+            var source = String(row.app || row.source || "Unknown source");
+            var date = String(row.date || "");
+            var sourceUrl = String(row.url || "");
             return '<div class="tag-row">'
-              + '<div class="tag-head"><span>#' + escapeHtml(String(idx + 1)) + ' | id=' + escapeHtml(String(row.id || "n/a")) + ' | ' + escapeHtml(String(row.app || "unknown")) + '</span>'
-              + '<span>' + escapeHtml(String(row.feedback_domain || "other")) + ' | ' + escapeHtml(String(row.research_relevance || "irrelevant")) + '</span></div>'
-              + '<div class="insight-body">' + escapeHtml(text || quote || "(no text)") + '</div>'
+              + '<div class="insight-body">' + escapeHtml(excerpt) + '</div>'
+              + '<div class="evidence-meta"><span>' + escapeHtml(source) + '</span>' + (date ? '<span>·</span><span>' + escapeHtml(date) + '</span>' : '') + '</div>'
+              + (sourceUrl ? '<a class="evidence-link" href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noreferrer">Open source</a>' : '')
               + '</div>';
           }).join("")
           + '</div>';
@@ -1099,128 +983,45 @@
         };
       }
 
-      function renderSelectedFilters(filters) {
-        if (!Array.isArray(filters) || filters.length === 0) {
-          return "";
-        }
-        var items = filters.map(function (item) {
-          var field = escapeHtml(item.field || "unknown");
-          var tags = Array.isArray(item.tags) ? item.tags.join(", ") : "";
-          return '<span class="selected-filter-chip">' + field + ': ' + escapeHtml(tags) + '</span>';
-        }).join("");
-        return '<div class="selected-filters" aria-label="Selected tag filters">' + items + '</div>';
-      }
-
-      function normalizeConfidenceLabel(label) {
-        var normalized = String(label || "").trim().toUpperCase();
-        if (["HIGH", "MEDIUM", "LOW"].indexOf(normalized) === -1) {
-          normalized = "LOW";
-        }
-        return normalized;
-      }
-
-      function getConfidenceClass(label) {
-        var normalized = normalizeConfidenceLabel(label);
-        if (normalized === "HIGH") {
-          return "confidence-high";
-        }
-        if (normalized === "MEDIUM") {
-          return "confidence-medium";
-        }
-        return "confidence-low";
-      }
-
-      function renderStructuredAnswer(answerData, responseData) {
+      function renderStructuredAnswer(answerData) {
         var data = answerData || {};
-        var metrics = responseData || {};
+        var insights = Array.isArray(data.insights) ? data.insights : [];
         var html = [];
-        var selectedFilters = Array.isArray(metrics.selected_tag_filters) ? metrics.selected_tag_filters : [];
-        var evidenceRows = Array.isArray(metrics.evidence) ? metrics.evidence : [];
-        var evidenceSources = [];
-        evidenceRows.forEach(function (row) {
-          var source = String(row && row.source ? row.source : row && row.app ? row.app : "unknown").trim();
-          if (source && evidenceSources.indexOf(source) === -1) {
-            evidenceSources.push(source);
-          }
-        });
-        var classifiedCount = Number(metrics.corpus_status && metrics.corpus_status.classified_records ? metrics.corpus_status.classified_records : 0) || 0;
-        var pendingCount = Number(metrics.corpus_status && metrics.corpus_status.pending_records ? metrics.corpus_status.pending_records : 0) || 0;
-        var contradictory = data.contradictory_evidence || {};
-        var insightCount = Array.isArray(data.insights) ? data.insights.length : 0;
-        var confidenceLabel = normalizeConfidenceLabel(metrics.confidence_level || data.confidence_level || "LOW");
-        var supportingCount = 0;
-        if (Array.isArray(data.insights)) {
-          data.insights.forEach(function (insight) {
-            supportingCount += Number(insight.evidence_count || 0) || 0;
-          });
-        }
-
-        html.push(renderSelectedFilters(selectedFilters));
-        html.push('<div class="answer-summary-grid">');
-        html.push('<div class="summary-card"><div class="summary-label">Eligible records</div><div class="summary-value">' + humanize(Number(metrics.records_searched || metrics.total_retrieved_count || 0)) + '</div></div>');
-        html.push('<div class="summary-card"><div class="summary-label">Supporting records</div><div class="summary-value">' + humanize(supportingCount) + '</div></div>');
-        html.push('<div class="summary-card"><div class="summary-label">Contradictory records</div><div class="summary-value">' + humanize(Number(contradictory.record_count || 0)) + '</div></div>');
-        html.push('<div class="summary-card"><div class="summary-label">Sources represented</div><div class="summary-value">' + humanize(evidenceSources.length) + '</div></div>');
-        html.push('<div class="summary-card"><div class="summary-label">Classified records</div><div class="summary-value">' + humanize(classifiedCount) + '</div></div>');
-        html.push('<div class="summary-card"><div class="summary-label">Pending records</div><div class="summary-value">' + humanize(pendingCount) + '</div></div>');
-        html.push('</div>');
 
         html.push('<article class="answer-structure">');
         if (data.question) {
           html.push('<section class="answer-section"><div class="answer-section-label">Question</div><div class="answer-section-body">' + escapeHtml(data.question) + '</div></section>');
         }
-        if (data.direct_answer) {
-          html.push('<section class="answer-section"><div class="answer-section-label">Direct answer</div><div class="answer-section-body">' + escapeHtml(data.direct_answer) + '</div></section>');
-        }
 
-        if (insightCount) {
-          html.push('<section class="answer-section"><div class="answer-section-label">Key insights</div><div class="insight-stack">');
-          data.insights.forEach(function (insight, index) {
-            var insightLabel = String(index + 1) + '. ' + (insight.title || "Insight");
-            var evidenceCount = Number(insight.evidence_count || 0) || 0;
-            var eligibleCount = Number(insight.eligible_record_count || 0) || 0;
-            var excerpts = Array.isArray(insight.evidence_excerpts) ? insight.evidence_excerpts : [];
-            var excerptMarkup = excerpts.length
-              ? excerpts.slice(0, 3).map(function (excerpt) {
-                  var text = excerpt && excerpt.text ? excerpt.text : "";
-                  var source = excerpt && excerpt.source ? excerpt.source : "";
-                  var date = excerpt && excerpt.date ? excerpt.date : "";
-                  var rating = excerpt && excerpt.rating ? excerpt.rating : "";
-                  var link = excerpt && excerpt.link ? excerpt.link : "";
-                  return '<li class="evidence-item">'
-                    + '<div class="evidence-meta">' + (source ? '<span>' + escapeHtml(source) + '</span>' : '') + (date ? '<span>' + escapeHtml(date) + '</span>' : '') + (rating ? '<span>' + escapeHtml(rating) + '</span>' : '') + '</div>'
-                    + '<div class="evidence-text">' + escapeHtml(text) + '</div>'
-                    + (link ? '<a class="evidence-link" href="' + escapeHtml(link) + '" target="_blank" rel="noreferrer">Open source</a>' : '')
-                    + '</li>';
-                }).join("")
-              : '<li class="evidence-item">No supporting excerpts were available for this insight.</li>';
+        html.push('<section class="answer-section"><div class="answer-section-label">Key insights</div><div class="insight-stack">');
+        insights.forEach(function (insight, index) {
+          var title = insight && insight.title ? insight.title : "Insight";
+          var summary = insight && insight.summary ? insight.summary : "";
+          var supporting = Array.isArray(insight && insight.supporting_evidence) ? insight.supporting_evidence : [];
+          var evidenceMarkup = supporting.length
+            ? supporting.slice(0, 3).map(function (item) {
+                var excerpt = item && item.excerpt ? item.excerpt : "";
+                var source = item && item.source ? item.source : "Unknown source";
+                var date = item && item.date ? item.date : "";
+                var sourceUrl = item && item.source_url ? item.source_url : "";
+                return '<li class="evidence-item">'
+                  + '<div class="evidence-text">' + escapeHtml(excerpt) + '</div>'
+                  + '<div class="evidence-meta"><span>' + escapeHtml(source) + '</span>' + (date ? '<span>·</span><span>' + escapeHtml(date) + '</span>' : '') + '</div>'
+                  + (sourceUrl ? '<a class="evidence-link" href="' + escapeHtml(sourceUrl) + '" target="_blank" rel="noreferrer">Open source</a>' : '')
+                  + '</li>';
+              }).join("")
+            : '<li class="evidence-item">No supporting evidence excerpt available.</li>';
 
-            html.push('<article class="insight-card">');
-            html.push('<div class="insight-head">');
-            html.push('<div class="insight-number">' + escapeHtml(String(index + 1)) + '</div>');
-            html.push('<div class="insight-title-block"><h3 class="insight-title">' + escapeHtml(insightLabel) + '</h3><div class="insight-meta">' + escapeHtml((insight.observation || "").slice(0, 140)) + '</div></div>');
-            html.push('<span class="confidence ' + getConfidenceClass(insight.confidence || confidenceLabel) + '"><span class="confidence-label">' + escapeHtml(String(insight.confidence || confidenceLabel).toUpperCase()) + '</span></span>');
-            html.push('</div>');
-            html.push('<div class="insight-body"><div class="insight-section"><strong>Observation</strong><p>' + escapeHtml(insight.observation || "") + '</p></div>');
-            html.push('<div class="insight-section"><strong>Why it matters</strong><p>' + escapeHtml(insight.why_it_matters || "") + '</p></div>');
-            html.push('<div class="insight-metrics"><span>Evidence: ' + humanize(evidenceCount) + ' of ' + humanize(eligibleCount) + ' eligible records</span><span>Product opportunity: ' + escapeHtml(insight.product_opportunity || "") + '</span></div>');
-            html.push('<details class="evidence-details"><summary>Supporting evidence</summary><ul class="evidence-list">' + excerptMarkup + '</ul></details>');
-            html.push('</div>');
-            html.push('</article>');
-          });
-          html.push('</div></section>');
-        }
-
-        if (contradictory.present) {
-          html.push('<section class="answer-section"><div class="answer-section-label">Contradictory evidence</div><div class="answer-section-body">' + escapeHtml(contradictory.summary || "") + '</div></section>');
-        }
-
-        html.push('<section class="answer-section compact"><div class="answer-section-label">Evidence status</div><div class="answer-section-body">' + escapeHtml(String(data.evidence_status || "limited").toUpperCase()) + ' — ' + escapeHtml(data.data_limitations || "") + '</div></section>');
-
-        if (data.data_limitations) {
-          html.push('<section class="answer-section"><div class="answer-section-label">Data limitations</div><div class="answer-section-body">' + escapeHtml(data.data_limitations) + '</div></section>');
-        }
-
+          html.push('<article class="insight-card">');
+          html.push('<div class="insight-head">');
+          html.push('<div class="insight-number">' + escapeHtml(String(index + 1)) + '</div>');
+          html.push('<div class="insight-title-block"><h3 class="insight-title">' + escapeHtml(title) + '</h3></div>');
+          html.push('</div>');
+          html.push('<p class="insight-summary">' + escapeHtml(summary) + '</p>');
+          html.push('<details class="evidence-details" open><summary>Supporting evidence</summary><ul class="evidence-list">' + evidenceMarkup + '</ul></details>');
+          html.push('</article>');
+        });
+        html.push('</div></section>');
         html.push('</article>');
         return html.join("");
       }
@@ -1234,9 +1035,7 @@
 
         var html = askThread.map(function (entry) {
           return '<article class="chat-turn">'
-            + '<div class="stat-label">Question</div>'
-            + '<p class="chat-question">' + escapeHtml(entry.question || "") + '</p>'
-            + renderStructuredAnswer(entry.answer_data || {}, entry)
+            + renderStructuredAnswer(entry.answer_data || {})
             + '</article>';
         }).join("");
 

@@ -149,6 +149,9 @@ def _to_evidence_rows(records):
                 "id": rec.get("id"),
                 "app": rec.get("app"),
                 "source": rec.get("source"),
+                "date": rec.get("date"),
+                "url": rec.get("url"),
+                "rating": rec.get("rating"),
                 "text": str(rec.get("text", "") or "").strip(),
                 "supporting_quote": str(rec.get("supporting_quote", "") or "").strip(),
                 "research_relevance": rec.get("research_relevance"),
@@ -245,25 +248,28 @@ def _build_limited_answer(evidence_rows):
     return "\n".join(lines)
 
 
-def _build_empty_answer_data(question, evidence_rows=None, evidence_status="limited"):
+def _build_empty_answer_data(question, evidence_rows=None):
+    supporting = []
+    for row in (evidence_rows or [])[:3]:
+        excerpt = str(row.get("supporting_quote") or row.get("text") or "").strip()
+        if not excerpt:
+            continue
+        supporting.append(
+            {
+                "excerpt": excerpt[:240],
+                "source": str(row.get("app") or row.get("source") or "unknown"),
+                "date": str(row.get("date") or ""),
+                "source_url": str(row.get("url") or ""),
+            }
+        )
     return {
         "question": question or "",
-        "direct_answer": "The retrieved evidence is too limited to support a confident answer yet.",
-        "insights": [],
-        "contradictory_evidence": {
-            "present": False,
-            "summary": "No meaningful contradictory evidence found in the retrieved sample.",
-            "record_count": 0,
-        },
-        "evidence_status": evidence_status,
-        "data_limitations": "Provisional result: evidence coverage is limited.",
-        "supporting_evidence": [
+        "insights": [
             {
-                "id": row.get("id"),
-                "source": row.get("app") or row.get("source") or "unknown",
-                "text": str(row.get("text", "") or "").strip(),
+                "title": "Evidence is currently limited for a strong behavioural claim",
+                "summary": "The retrieved sample does not yet contain enough direct support for multiple robust behavioural patterns. This answer keeps conclusions narrow to avoid overstating the evidence.",
+                "supporting_evidence": supporting,
             }
-            for row in (evidence_rows or [])[:3]
         ],
     }
 
@@ -278,84 +284,130 @@ def _sanitize_visible_text(value):
     return text.strip()
 
 
-def _normalize_insight_payload(insight, eligible_record_count, evidence_count, contradiction_present, keyword_fallback, evidence_indirect, source_count):
+def _build_record_lookup(records):
+    lookup = {}
+    for rec in records or []:
+        rec_id = rec.get("id")
+        if rec_id is None:
+            continue
+        lookup[rec_id] = rec
+        lookup[str(rec_id)] = rec
+    return lookup
+
+
+def _excerpt_in_record(excerpt, record):
+    normalized = " ".join(str(excerpt or "").split()).lower()
+    if not normalized:
+        return False
+    text = " ".join(str(record.get("text", "") or "").split()).lower()
+    quote = " ".join(str(record.get("supporting_quote", "") or "").split()).lower()
+    return normalized in text or normalized in quote
+
+
+def _build_evidence_from_record(record, excerpt=None):
+    safe_excerpt = str(excerpt or "").strip()
+    canonical_excerpt = str(record.get("supporting_quote") or "").strip() or str(record.get("text") or "").strip()
+    if not safe_excerpt or not _excerpt_in_record(safe_excerpt, record):
+        safe_excerpt = canonical_excerpt
+    return {
+        "excerpt": _sanitize_visible_text(safe_excerpt)[:240],
+        "source": _sanitize_visible_text(record.get("app") or record.get("source") or "unknown"),
+        "date": _sanitize_visible_text(record.get("date") or ""),
+        "source_url": _sanitize_visible_text(record.get("url") or ""),
+    }
+
+
+def _normalize_supporting_evidence(insight, records, record_lookup):
+    normalized = []
+    seen = set()
+
+    provided = insight.get("supporting_evidence") if isinstance(insight, dict) else []
+    if isinstance(provided, list):
+        for item in provided:
+            if not isinstance(item, dict):
+                continue
+            excerpt = _sanitize_visible_text(item.get("excerpt"))
+            source = _sanitize_visible_text(item.get("source"))
+            matched_record = None
+            for record in records:
+                if excerpt and _excerpt_in_record(excerpt, record):
+                    matched_record = record
+                    break
+            if matched_record is None:
+                continue
+            evidence_row = _build_evidence_from_record(matched_record, excerpt=excerpt)
+            key = (evidence_row["excerpt"], evidence_row["source"])
+            if key in seen:
+                continue
+            seen.add(key)
+            if source and evidence_row["source"] == "unknown":
+                evidence_row["source"] = source
+            normalized.append(evidence_row)
+            if len(normalized) >= 3:
+                break
+
+    if len(normalized) < 2:
+        for record_id in (insight.get("supporting_record_ids", []) if isinstance(insight, dict) else []) or []:
+            rec = record_lookup.get(record_id) or record_lookup.get(str(record_id))
+            if rec is None:
+                continue
+            evidence_row = _build_evidence_from_record(rec)
+            key = (evidence_row["excerpt"], evidence_row["source"])
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(evidence_row)
+            if len(normalized) >= 3:
+                break
+
+    if len(normalized) < 2:
+        for rec in records[:3]:
+            evidence_row = _build_evidence_from_record(rec)
+            key = (evidence_row["excerpt"], evidence_row["source"])
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(evidence_row)
+            if len(normalized) >= 2:
+                break
+
+    return normalized[:3]
+
+
+def _normalize_insight_payload(insight, records, record_lookup):
     if not isinstance(insight, dict):
         return {}
 
     title = _sanitize_visible_text(insight.get("title"))
-    observation = _sanitize_visible_text(insight.get("observation"))
-    why_it_matters = _sanitize_visible_text(insight.get("why_it_matters"))
-    product_opportunity = _sanitize_visible_text(insight.get("product_opportunity"))
-    confidence = _normalize_confidence_label(
-        insight.get("confidence"),
-        support_count=int(evidence_count or 0),
-        eligible_count=int(eligible_record_count or 0),
-        classification_coverage_incomplete=False,
-        evidence_indirect=evidence_indirect,
-        keyword_fallback=keyword_fallback,
-        contradiction_present=contradiction_present,
-        source_count=source_count,
-    )
-
-    evidence_excerpts = []
-    for excerpt in insight.get("evidence_excerpts", []) or []:
-        if isinstance(excerpt, dict):
-            evidence_excerpts.append(
-                {
-                    "text": _sanitize_visible_text(excerpt.get("text")),
-                    "source": _sanitize_visible_text(excerpt.get("source")),
-                    "date": _sanitize_visible_text(excerpt.get("date")),
-                    "rating": _sanitize_visible_text(excerpt.get("rating")),
-                    "link": _sanitize_visible_text(excerpt.get("link")),
-                }
-            )
-        elif isinstance(excerpt, str):
-            evidence_excerpts.append({"text": _sanitize_visible_text(excerpt), "source": "", "date": "", "rating": "", "link": ""})
-
-    supporting_ids = []
-    for record_id in insight.get("supporting_record_ids", []) or []:
-        if record_id is None:
-            continue
-        supporting_ids.append(record_id)
+    summary = _sanitize_visible_text(insight.get("summary"))
+    supporting_evidence = _normalize_supporting_evidence(insight, records, record_lookup)
 
     return {
         "title": title,
-        "observation": observation,
-        "why_it_matters": why_it_matters,
-        "evidence_count": int(evidence_count or 0),
-        "eligible_record_count": int(eligible_record_count or 0),
-        "supporting_record_ids": supporting_ids,
-        "evidence_excerpts": evidence_excerpts,
-        "product_opportunity": product_opportunity,
-        "confidence": confidence,
+        "summary": summary,
+        "supporting_evidence": supporting_evidence,
     }
 
 
-def _validate_synthesis_payload(payload, question, records, evidence_status_hint=None):
+def _validate_synthesis_payload(payload, question, records):
     if not isinstance(payload, dict):
-        return None
-
-    direct_answer = _sanitize_visible_text(payload.get("direct_answer"))
-    if not direct_answer:
         return None
 
     insights = payload.get("insights")
     if not isinstance(insights, list):
         return None
 
+    record_lookup = _build_record_lookup(records)
+
     filtered_insights = []
     seen_titles = set()
     for insight in insights[:3]:
-        normalized = _normalize_insight_payload(
-            insight,
-            eligible_record_count=max(1, len(records)),
-            evidence_count=int((insight or {}).get("evidence_count", 0) or 0),
-            contradiction_present=bool((payload.get("contradictory_evidence") or {}).get("present", False)),
-            keyword_fallback=False,
-            evidence_indirect=evidence_status_hint in {"limited", "insufficient"},
-            source_count=max(1, len({str(item.get("source") or "") for item in (insight.get("evidence_excerpts") or []) if isinstance(item, dict)})),
-        )
+        normalized = _normalize_insight_payload(insight, records, record_lookup)
         if not normalized.get("title"):
+            continue
+        if not normalized.get("summary"):
+            continue
+        if len(normalized.get("supporting_evidence", [])) < 2:
             continue
         if normalized["title"] in seen_titles:
             continue
@@ -365,79 +417,39 @@ def _validate_synthesis_payload(payload, question, records, evidence_status_hint
     if not filtered_insights:
         return None
 
+    if len(filtered_insights) == 1 and len(records) >= 3:
+        for record in records:
+            fallback = {
+                "title": "Behavioural evidence remains narrow in this retrieved sample",
+                "summary": "The evidence supports only one defensible pattern right now. Additional distinct patterns need stronger direct support in the retrieved records.",
+                "supporting_evidence": [_build_evidence_from_record(record)],
+            }
+            if fallback["title"] in seen_titles:
+                continue
+            filtered_insights.append(fallback)
+            break
+
     if len(filtered_insights) > 3:
         filtered_insights = filtered_insights[:3]
 
-    contradictory_evidence = payload.get("contradictory_evidence")
-    if not isinstance(contradictory_evidence, dict):
-        contradictory_evidence = {}
-
-    present = bool(contradictory_evidence.get("present", False))
-    summary = _sanitize_visible_text(contradictory_evidence.get("summary"))
-    if not present and not summary:
-        summary = "No meaningful contradictory evidence found in the retrieved sample."
-    if present and not summary:
-        summary = "Some evidence points in a different direction."
-    record_count = int(contradictory_evidence.get("record_count", 0) or 0)
-    if not present:
-        record_count = 0
-
-    evidence_status = str(payload.get("evidence_status") or evidence_status_hint or "limited").strip().lower()
-    if evidence_status not in {"sufficient", "limited", "insufficient"}:
-        evidence_status = "limited"
-
-    data_limitations = _sanitize_visible_text(payload.get("data_limitations"))
-    if not data_limitations:
-        data_limitations = "Provisional result: evidence coverage is limited."
-
     return {
         "question": _sanitize_visible_text(question),
-        "direct_answer": direct_answer,
         "insights": filtered_insights,
-        "contradictory_evidence": {
-            "present": present,
-            "summary": summary,
-            "record_count": record_count,
-        },
-        "evidence_status": evidence_status,
-        "data_limitations": data_limitations,
     }
 
 
 def _build_safe_structured_fallback(question, records, sufficiency, pending_count, evidence_rows=None):
-    evidence_status = str(sufficiency.get("state") or "limited").strip().lower()
-    if evidence_status not in {"sufficient", "limited", "insufficient"}:
-        evidence_status = "limited"
-
-    base_record = (records or [None])[0]
-    fallback_text = "The retrieved evidence is too limited to support a confident answer yet."
-    if base_record is not None:
-        fallback_text = f"The retrieved evidence points to {str(base_record.get('text', '') or '').strip()[:120]}"
-
-    data_limitations = "Provisional result: 0 of 0 records classified." if pending_count <= 0 else f"Provisional result: {pending_count} records are still pending classification."
+    _ = sufficiency
+    _ = pending_count
     return {
         "question": question or "",
-        "direct_answer": fallback_text,
         "insights": [
             {
-                "title": "Evidence is still too limited for a strong claim",
-                "observation": "The retrieved records do not yet provide enough specific support for a confident behavioural finding.",
-                "why_it_matters": "This keeps the answer cautious and avoids overstating the evidence.",
-                "evidence_count": min(1, max(0, len(records))),
-                "eligible_record_count": max(1, len(records)),
-                "supporting_record_ids": [rec.get("id") for rec in records[:1] if rec.get("id") is not None],
-                "evidence_excerpts": [],
-                "product_opportunity": "Capture more discovery-specific evidence before making product decisions.",
-                "confidence": "low",
+                "title": "Evidence is currently limited for a strong behavioural claim",
+                "summary": "The retrieved sample does not yet contain enough direct support for multiple robust behavioural patterns. This answer keeps conclusions narrow to avoid overstating the evidence.",
+                "supporting_evidence": _build_empty_answer_data(question, evidence_rows).get("insights", [{}])[0].get("supporting_evidence", []),
             }
         ],
-        "contradictory_evidence": {
-            "present": False,
-            "summary": "No meaningful contradictory evidence found in the retrieved sample.",
-            "record_count": 0,
-        },
-        "evidence_status": evidence_status,
-        "data_limitations": data_limitations,
     }
 
 TAG_FIELD_MAP = {
@@ -906,6 +918,9 @@ def _normalize_analyzed_row(row):
         "text": str(raw.get("text", "") or ""),
         "app": str(raw.get("app", "") or "unknown"),
         "source": _normalize_source_name(raw.get("source")),
+        "date": str(raw.get("date", "") or ""),
+        "url": str(raw.get("url", "") or ""),
+        "rating": raw.get("rating"),
         "supporting_quote": str(row.get("supporting_quote", "") or ""),
         "sentiment_score": row.get("sentiment_score"),
         "research_relevance": str(row.get("research_relevance", "") or ""),
@@ -934,7 +949,7 @@ def _normalize_analyzed_row(row):
 def _fetch_all_analyzed_reviews_for_ask():
     select_cols = (
         "*,"
-        "raw_reviews(text,app,source,rating)"
+        "raw_reviews(text,app,source,rating,date,url)"
     )
     rows = _fetch_all_rows("analyzed_reviews", select_cols)
     return [_normalize_analyzed_row(row) for row in rows]
@@ -998,7 +1013,7 @@ def _validate_claims_with_model(question, answer_text, records):
 
 def _generate_research_answer(question, records, sufficiency, classified_total, pending_count):
     if sufficiency.get("state") == "insufficient":
-        return build_insufficient_evidence_response(question, sufficiency), []
+        return _build_safe_structured_fallback(question, records, sufficiency, pending_count), []
 
     prompt = build_synthesis_prompt(question, records, sufficiency, classified_total, pending_count)
     completion = client.chat.completions.create(
@@ -1023,7 +1038,7 @@ def _generate_research_answer(question, records, sufficiency, classified_total, 
     raw_answer = raw_answer.strip()
 
     parsed = _parse_json_object(raw_answer)
-    payload = _validate_synthesis_payload(parsed, question, records, evidence_status_hint=str(sufficiency.get("state") or "limited").strip().lower())
+    payload = _validate_synthesis_payload(parsed, question, records)
     if payload is None:
         payload = _build_safe_structured_fallback(question, records, sufficiency, pending_count)
 
@@ -1187,9 +1202,9 @@ def ask():
             )
             if isinstance(answer_payload, dict):
                 answer_data = answer_payload
-                answer_text = answer_payload.get("direct_answer") or ""
+                answer_text = ""
             elif isinstance(answer_payload, str):
-                answer_data = _build_empty_answer_data(question, top_records, evidence_status="limited")
+                answer_data = _build_empty_answer_data(question, top_records)
                 answer_text = answer_payload
             else:
                 raise AskWorkflowError(
@@ -1227,7 +1242,7 @@ def ask():
                     corpus_status=corpus_status,
                     retrieval_failed=False,
                     debug_payload=debug_payload,
-                    answer_data=_build_empty_answer_data(question, evidence_rows, evidence_status="limited"),
+                    answer_data=_build_empty_answer_data(question, evidence_rows),
                 )
                 return jsonify(response_payload), llm_exc.status_code
 
@@ -1250,7 +1265,7 @@ def ask():
                     corpus_status=corpus_status,
                     retrieval_failed=False,
                     debug_payload=debug_payload,
-                    answer_data=_build_empty_answer_data(question, evidence_rows, evidence_status="limited"),
+                    answer_data=_build_empty_answer_data(question, evidence_rows),
                 )
                 return jsonify(response_payload), 429
 
@@ -1272,7 +1287,7 @@ def ask():
                     corpus_status=corpus_status,
                     retrieval_failed=False,
                     debug_payload=debug_payload,
-                    answer_data=_build_empty_answer_data(question, evidence_rows, evidence_status="limited"),
+                    answer_data=_build_empty_answer_data(question, evidence_rows),
                 )
                 return jsonify(response_payload), 408
 
@@ -1294,7 +1309,7 @@ def ask():
                     corpus_status=corpus_status,
                     retrieval_failed=False,
                     debug_payload=debug_payload,
-                    answer_data=_build_empty_answer_data(question, evidence_rows, evidence_status="limited"),
+                    answer_data=_build_empty_answer_data(question, evidence_rows),
                 )
                 return jsonify(response_payload), 503
 
@@ -1315,7 +1330,7 @@ def ask():
                 corpus_status=corpus_status,
                 retrieval_failed=False,
                 debug_payload=debug_payload,
-                answer_data=_build_empty_answer_data(question, evidence_rows, evidence_status="limited"),
+                answer_data=_build_empty_answer_data(question, evidence_rows),
             )
             return jsonify(response_payload), 500
 
@@ -1331,11 +1346,6 @@ def ask():
         ).upper()
 
         provisional = pending_count > 0
-        if provisional:
-            if not answer_data.get("data_limitations"):
-                answer_data["data_limitations"] = f"Provisional result: {pending_count} of {total_raw_reviews} records are still pending classification."
-            else:
-                answer_data["data_limitations"] = answer_data["data_limitations"] + f" Provisional result: {pending_count} of {total_raw_reviews} records are still pending classification."
 
         response_payload = _structured_ask_response(
             status="success",
