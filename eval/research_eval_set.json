@@ -1,0 +1,66 @@
+[
+  {
+    "question": "Why do users repeatedly buy from the same categories?",
+    "intended_intents": ["repetitive_purchase", "habit_formation"],
+    "allowed_domains": ["shopping_habit", "purchase_mission", "price_and_value", "assortment"],
+    "excluded_domains": ["delivery", "refund", "customer_support", "app_technical"],
+    "expected_relevant_record_ids": [17386, 17149, 16335, 17668, 17446, 16260, 16153],
+    "unacceptable_evidence_examples": ["late delivery only", "refund follow-up only", "support escalation only"]
+  },
+  {
+    "question": "What prevents users from exploring new categories?",
+    "intended_intents": ["exploration_barrier", "information_need"],
+    "allowed_domains": ["category_discovery", "trust_and_quality", "product_information", "price_and_value", "assortment", "shopping_habit"],
+    "excluded_domains": ["delivery", "refund", "customer_support", "app_technical"],
+    "expected_relevant_record_ids": [16801, 16764, 16340, 16892, 16709, 16134, 17427],
+    "unacceptable_evidence_examples": ["delivery delay without category mention", "refund issue without exploration context"]
+  },
+  {
+    "question": "How do users discover products today?",
+    "intended_intents": ["discovery_behaviour"],
+    "allowed_domains": ["category_discovery", "recommendation", "product_information", "impulse_purchase"],
+    "excluded_domains": ["delivery", "refund", "customer_support", "app_technical"],
+    "expected_relevant_record_ids": [17459, 16134, 16112, 15933, 16081, 17402],
+    "unacceptable_evidence_examples": ["delivery grievance", "refund grievance"]
+  },
+  {
+    "question": "What role do habits play in shopping behaviour?",
+    "intended_intents": ["habit_formation", "repetitive_purchase"],
+    "allowed_domains": ["shopping_habit", "purchase_mission", "price_and_value"],
+    "excluded_domains": ["delivery", "refund", "customer_support", "app_technical"],
+    "expected_relevant_record_ids": [17149, 17386, 16195, 16591, 16153, 17177],
+    "unacceptable_evidence_examples": ["operational complaint with no habit signal"]
+  },
+  {
+    "question": "What information do users need before trying a new category?",
+    "intended_intents": ["information_need", "exploration_barrier"],
+    "allowed_domains": ["product_information", "trust_and_quality", "category_discovery"],
+    "excluded_domains": ["delivery", "refund", "customer_support", "app_technical"],
+    "expected_relevant_record_ids": [16892, 17527, 16340, 17022, 17480, 16447],
+    "unacceptable_evidence_examples": ["generic app bug report", "delivery complaint without info gap"]
+  },
+  {
+    "question": "What frustrations emerge repeatedly?",
+    "intended_intents": ["frustration"],
+    "allowed_domains": ["delivery", "refund", "customer_support", "app_technical", "trust_and_quality", "category_discovery"],
+    "excluded_domains": [],
+    "expected_relevant_record_ids": [17583, 16475, 16456, 15872, 17319, 17072],
+    "unacceptable_evidence_examples": ["off-topic praise-only comment"]
+  },
+  {
+    "question": "Which users appear more likely to experiment?",
+    "intended_intents": ["experimental_segment"],
+    "allowed_domains": ["category_discovery", "shopping_habit", "impulse_purchase", "recommendation"],
+    "excluded_domains": ["delivery", "refund", "customer_support", "app_technical"],
+    "expected_relevant_record_ids": [17703, 16195, 17402, 17177, 17080],
+    "unacceptable_evidence_examples": ["late delivery complaints", "refund-only complaints"]
+  },
+  {
+    "question": "What unmet needs emerge consistently?",
+    "intended_intents": ["unmet_need", "category_opportunity"],
+    "allowed_domains": ["assortment", "category_discovery", "product_information", "workaround"],
+    "excluded_domains": ["delivery", "refund", "customer_support", "app_technical"],
+    "expected_relevant_record_ids": [16892, 16340, 17402, 17668, 16362, 16994],
+    "unacceptable_evidence_examples": ["support ticket complaint"]
+  }
+]

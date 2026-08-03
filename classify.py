@@ -61,7 +61,12 @@ print(f"Gemini first request model (initial): {GEMINI_MODELS[active_gemini_model
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 FAILED_IDS_PATH = Path(__file__).resolve().parent / "failed_ids.txt"
-SYSTEM_PROMPT_SUFFIX = "\n\nReturn ONLY valid JSON with exactly these keys: behavioral_driver, discovery_barrier, discovery_channel, frustration_type, segment_marker, unmet_need, categories, sentiment_score, supporting_quote. Use plain integers for sentiment_score, such as -2, -1, 0, 1, 2. Do not use plus signs or strings for sentiment_score."
+SYSTEM_PROMPT_SUFFIX = (
+    "\n\nReturn ONLY valid JSON with exactly these keys: "
+    "behavioral_driver, discovery_barrier, discovery_channel, frustration_type, segment_marker, unmet_need, categories, sentiment_score, supporting_quote, "
+    "research_relevance, feedback_domain, shopping_mission, habit_signal, current_category, category_tried, discovery_method, exploration_barrier, purchase_trigger, information_needed, trust_signal, perceived_risk, workaround, user_context, unmet_need_detail, evidence_quote, classification_confidence. "
+    "Use plain integers for sentiment_score, such as -2, -1, 0, 1, 2. Do not use plus signs or strings for sentiment_score."
+)
 
 
 class RateLimitError(Exception):
@@ -153,6 +158,33 @@ ALLOWED_TAGS = {
     },
 }
 
+ALLOWED_RESEARCH_RELEVANCE = {
+    "discovery_relevant",
+    "indirectly_relevant",
+    "operational_only",
+    "irrelevant",
+}
+
+ALLOWED_FEEDBACK_DOMAIN = {
+    "category_discovery",
+    "shopping_habit",
+    "purchase_mission",
+    "trust_and_quality",
+    "product_information",
+    "price_and_value",
+    "recommendation",
+    "assortment",
+    "impulse_purchase",
+    "workaround",
+    "delivery",
+    "refund",
+    "customer_support",
+    "app_technical",
+    "other",
+}
+
+ALLOWED_CLASSIFICATION_CONFIDENCE = {"low", "medium", "high"}
+
 
 def _coerce_array(value):
     if isinstance(value, list):
@@ -202,6 +234,23 @@ def _sanitize_payload(raw_payload, text=""):
             "categories": [],
             "sentiment_score": 0,
             "supporting_quote": "",
+            "research_relevance": "irrelevant",
+            "feedback_domain": "other",
+            "shopping_mission": "not_stated",
+            "habit_signal": "not_stated",
+            "current_category": "not_stated",
+            "category_tried": "not_stated",
+            "discovery_method": "not_stated",
+            "exploration_barrier": "not_stated",
+            "purchase_trigger": "not_stated",
+            "information_needed": "not_stated",
+            "trust_signal": "not_stated",
+            "perceived_risk": "not_stated",
+            "workaround": "not_stated",
+            "user_context": "not_stated",
+            "unmet_need_detail": "not_stated",
+            "evidence_quote": "not_stated",
+            "classification_confidence": "medium",
         }
 
     payload = {
@@ -214,6 +263,23 @@ def _sanitize_payload(raw_payload, text=""):
         "categories": [],
         "sentiment_score": 0,
         "supporting_quote": "",
+        "research_relevance": "irrelevant",
+        "feedback_domain": "other",
+        "shopping_mission": "not_stated",
+        "habit_signal": "not_stated",
+        "current_category": "not_stated",
+        "category_tried": "not_stated",
+        "discovery_method": "not_stated",
+        "exploration_barrier": "not_stated",
+        "purchase_trigger": "not_stated",
+        "information_needed": "not_stated",
+        "trust_signal": "not_stated",
+        "perceived_risk": "not_stated",
+        "workaround": "not_stated",
+        "user_context": "not_stated",
+        "unmet_need_detail": "not_stated",
+        "evidence_quote": "not_stated",
+        "classification_confidence": "medium",
     }
 
     for field, allowed in ALLOWED_TAGS.items():
@@ -247,6 +313,37 @@ def _sanitize_payload(raw_payload, text=""):
             quote = " ".join(words[:15])
         payload["supporting_quote"] = quote
 
+    relevance_value = str(raw_payload.get("research_relevance", "") or "").strip()
+    if relevance_value in ALLOWED_RESEARCH_RELEVANCE:
+        payload["research_relevance"] = relevance_value
+
+    domain_value = str(raw_payload.get("feedback_domain", "") or "").strip()
+    if domain_value in ALLOWED_FEEDBACK_DOMAIN:
+        payload["feedback_domain"] = domain_value
+
+    confidence_value = str(raw_payload.get("classification_confidence", "") or "").strip().lower()
+    if confidence_value in ALLOWED_CLASSIFICATION_CONFIDENCE:
+        payload["classification_confidence"] = confidence_value
+
+    for field in [
+        "shopping_mission",
+        "habit_signal",
+        "current_category",
+        "category_tried",
+        "discovery_method",
+        "exploration_barrier",
+        "purchase_trigger",
+        "information_needed",
+        "trust_signal",
+        "perceived_risk",
+        "workaround",
+        "user_context",
+        "unmet_need_detail",
+        "evidence_quote",
+    ]:
+        value = str(raw_payload.get(field, "") or "").strip()
+        payload[field] = value if value else "not_stated"
+
     return payload
 
 
@@ -264,6 +361,23 @@ def _validate_json_payload(payload, text=""):
         "categories",
         "sentiment_score",
         "supporting_quote",
+        "research_relevance",
+        "feedback_domain",
+        "shopping_mission",
+        "habit_signal",
+        "current_category",
+        "category_tried",
+        "discovery_method",
+        "exploration_barrier",
+        "purchase_trigger",
+        "information_needed",
+        "trust_signal",
+        "perceived_risk",
+        "workaround",
+        "user_context",
+        "unmet_need_detail",
+        "evidence_quote",
+        "classification_confidence",
     }
     missing_keys = expected_keys - set(payload.keys())
     if missing_keys:
@@ -551,6 +665,24 @@ def classify_review(text, retries=3, rate_limit_delay=60):
             raise
 
 
+def _insert_analyzed_payload_with_column_fallback(payload):
+    mutable_payload = dict(payload)
+    for _ in range(30):
+        try:
+            return supabase.table("analyzed_reviews").insert(mutable_payload).execute()
+        except Exception as exc:
+            message = str(exc)
+            match = re.search(r"Could not find the '([^']+)' column", message)
+            if not match:
+                raise
+            missing_col = match.group(1)
+            if missing_col not in mutable_payload:
+                raise
+            del mutable_payload[missing_col]
+            print(f"Skipping missing column during insert: {missing_col}")
+    raise RuntimeError("Unable to insert analyzed payload after removing unknown columns")
+
+
 def classify_and_store_all(
     max_classifications=None,
     progress_every=50,
@@ -617,8 +749,25 @@ def classify_and_store_all(
                 "categories": classification.get("categories", []),
                 "sentiment_score": classification.get("sentiment_score", 0),
                 "supporting_quote": classification.get("supporting_quote", ""),
+                "research_relevance": classification.get("research_relevance", "irrelevant"),
+                "feedback_domain": classification.get("feedback_domain", "other"),
+                "shopping_mission": classification.get("shopping_mission", "not_stated"),
+                "habit_signal": classification.get("habit_signal", "not_stated"),
+                "current_category": classification.get("current_category", "not_stated"),
+                "category_tried": classification.get("category_tried", "not_stated"),
+                "discovery_method": classification.get("discovery_method", "not_stated"),
+                "exploration_barrier": classification.get("exploration_barrier", "not_stated"),
+                "purchase_trigger": classification.get("purchase_trigger", "not_stated"),
+                "information_needed": classification.get("information_needed", "not_stated"),
+                "trust_signal": classification.get("trust_signal", "not_stated"),
+                "perceived_risk": classification.get("perceived_risk", "not_stated"),
+                "workaround": classification.get("workaround", "not_stated"),
+                "user_context": classification.get("user_context", "not_stated"),
+                "unmet_need_detail": classification.get("unmet_need_detail", "not_stated"),
+                "evidence_quote": classification.get("evidence_quote", "not_stated"),
+                "classification_confidence": classification.get("classification_confidence", "medium"),
             }
-            insert_response = supabase.table("analyzed_reviews").insert(payload).execute()
+            insert_response = _insert_analyzed_payload_with_column_fallback(payload)
             if getattr(insert_response, "data", None):
                 succeeded_count += 1
                 consecutive_rate_limit_failures = 0

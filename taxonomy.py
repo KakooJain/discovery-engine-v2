@@ -1,5 +1,5 @@
 TAXONOMY_PROMPT = """---
-Tag Indian quick-commerce reviews. Return ONLY JSON with keys: behavioral_driver, discovery_barrier, discovery_channel, frustration_type, segment_marker, unmet_need, categories, sentiment_score, supporting_quote.
+Tag Indian quick-commerce reviews. Return ONLY JSON with keys: behavioral_driver, discovery_barrier, discovery_channel, frustration_type, segment_marker, unmet_need, categories, sentiment_score, supporting_quote, research_relevance, feedback_domain, shopping_mission, habit_signal, current_category, category_tried, discovery_method, exploration_barrier, purchase_trigger, information_needed, trust_signal, perceived_risk, workaround, user_context, unmet_need_detail, evidence_quote, classification_confidence.
 CRITICAL: assign tags only on direct explicit evidence; do not infer. Empty arrays are expected when uncertain.
 
 behavioral_driver tags: habit-routine, trust-familiarity, convenience-speed, price-sensitivity | cues: same items, reorder, known brands, hurry, no time, cheap, sasta, budget, discount
@@ -12,4 +12,15 @@ categories: groceries, fruits-vegetables, dairy, snacks-beverages, household-ess
 
 sentiment_score: -2 furious,bakwas,scam,fraud,never again; -1 dissatisfied complaint; 0 neutral/mixed; +1 satisfied good works fine; +2 delighted best love amazing.
 supporting_quote: one verbatim diagnostic fragment, 5-15 words (max 20), never full review.
+
+research_relevance: one of discovery_relevant, indirectly_relevant, operational_only, irrelevant.
+feedback_domain: one of category_discovery, shopping_habit, purchase_mission, trust_and_quality, product_information, price_and_value, recommendation, assortment, impulse_purchase, workaround, delivery, refund, customer_support, app_technical, other.
+
+Behavioral fields must be short evidence-grounded strings, else not_stated:
+shopping_mission, habit_signal, current_category, category_tried, discovery_method, exploration_barrier, purchase_trigger, information_needed, trust_signal, perceived_risk, workaround, user_context, unmet_need_detail, evidence_quote.
+classification_confidence: one of low, medium, high.
+
+IMPORTANT:
+- Missing item, refund, delayed delivery, or support issue should remain operational_only unless the review explicitly links that issue to reluctance in trying unfamiliar categories.
+- Do not infer personal attributes that are not explicitly stated.
 ---"""

@@ -1004,14 +1004,19 @@
       function renderHeaderStats(stats) {
         var totalReviews = Number(valueOrDefault(stats.total_reviews, 0)) || 0;
         var classifiedSoFar = Number(valueOrDefault(stats.classified_so_far, 0)) || 0;
+        var pendingRecords = Number(valueOrDefault(stats.pending_records, 0)) || 0;
+        var failedRecords = Number(valueOrDefault(stats.failed_records, 0)) || 0;
         var classifiedPct = totalReviews ? Math.round((classifiedSoFar / totalReviews) * 100) : 0;
         var classifiedValue = humanize(classifiedSoFar) + ' of ' + humanize(totalReviews) + ' (' + classifiedPct + '%)';
+        var provisionalLabel = stats.provisional ? '<div class="chip" style="margin-top:6px">Provisional: classification incomplete</div>' : '';
 
         statsGrid.innerHTML = [
-          statCard("Reviewed Reviews", humanize(totalReviews)),
+          statCard("Total Raw Reviews", humanize(totalReviews), provisionalLabel),
+          statCard("Classified Reviews", humanize(classifiedSoFar)),
+          statCard("Pending Reviews", humanize(pendingRecords) + ' | Failed: ' + humanize(failedRecords)),
           statCard("Play Store", humanize(valueOrDefault(stats.play_store_count, 0))),
           statCard("App Store", humanize(valueOrDefault(stats.app_store_count, 0))),
-          statCard("Reviewed sample", classifiedValue)
+          statCard("Classification Coverage", classifiedValue)
         ].join("");
       }
 
@@ -1116,15 +1121,31 @@
 
       function loadDashboard() {
         dashStatus.textContent = "Loading dashboard data...";
-        return fetch("/dashboard-data-v2")
+        var controller = new AbortController();
+        var timeout = setTimeout(function () {
+          controller.abort();
+        }, 12000);
+
+        return fetch("/dashboard-data-v2", { signal: controller.signal })
           .then(function (response) {
-            return response.json().then(function (data) {
+            return response.text().then(function (bodyText) {
+              var data = {};
+              try {
+                data = JSON.parse(bodyText);
+              } catch (parseError) {
+                data = { error: "Dashboard endpoint returned invalid JSON." };
+              }
               return { ok: response.ok, data: data };
             });
           })
           .then(function (result) {
+            clearTimeout(timeout);
             if (!result.ok) {
               dashStatus.textContent = result.data.error || "Unable to load dashboard data.";
+              return;
+            }
+            if (!result.data || typeof result.data !== "object") {
+              dashStatus.textContent = "Dashboard error: unexpected response shape.";
               return;
             }
             renderHeaderStats(result.data.header_stats || {});
@@ -1134,7 +1155,12 @@
             dashboardLoaded = true;
           })
           .catch(function (error) {
-            dashStatus.textContent = "Dashboard error: " + error.message;
+            clearTimeout(timeout);
+            if (error && error.name === "AbortError") {
+              dashStatus.textContent = "Dashboard error: request timed out.";
+              return;
+            }
+            dashStatus.textContent = "Dashboard error: " + (error && error.message ? error.message : "unknown error");
           });
       }
 
@@ -1216,7 +1242,10 @@
               total_retrieved_count: result.data.total_retrieved_count,
               fallback_used: result.data.fallback_used
             });
-            answerMeta.textContent = "Sources used: " + humanize(valueOrDefault(result.data.sources_used, 0));
+            var searched = humanize(valueOrDefault(result.data.records_searched, result.data.total_retrieved_count || 0));
+            var used = humanize(valueOrDefault(result.data.records_used, result.data.sources_used || 0));
+            var provisionalText = result.data.provisional ? " | Provisional" : "";
+            answerMeta.textContent = "Records searched: " + searched + " | Sources used: " + used + provisionalText;
             answerMeta.style.display = "block";
             answerFallback.textContent = "";
             questionInput.value = "";

@@ -1,6 +1,7 @@
 import os
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -11,6 +12,12 @@ from sklearn.metrics.pairwise import cosine_similarity
 from supabase import create_client
 
 from retrieve import retrieve
+from research_pipeline import (
+    build_debug_payload,
+    build_insufficient_evidence_response,
+    build_synthesis_prompt,
+    run_hybrid_retrieval,
+)
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
@@ -27,6 +34,8 @@ client = Groq(api_key=GROQ_API_KEY, max_retries=1)
 supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 app = Flask(__name__, template_folder="templates")
+ASK_DEBUG_ENABLED = os.getenv("ASK_DEBUG_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+ASK_MODEL = os.getenv("ASK_MODEL", "llama-3.1-8b-instant")
 
 TAG_FIELD_MAP = {
     "behavioral_driver": {
@@ -493,10 +502,171 @@ def _normalize_analyzed_row(row):
         "id": row.get("raw_review_id"),
         "text": str(raw.get("text", "") or ""),
         "app": str(raw.get("app", "") or "unknown"),
+        "source": _normalize_source_name(raw.get("source")),
         "supporting_quote": str(row.get("supporting_quote", "") or ""),
         "sentiment_score": row.get("sentiment_score"),
+        "research_relevance": str(row.get("research_relevance", "") or ""),
+        "feedback_domain": str(row.get("feedback_domain", "") or ""),
+        "behavioral_schema": {
+            "shopping_mission": str(row.get("shopping_mission", "") or "not_stated"),
+            "habit_signal": str(row.get("habit_signal", "") or "not_stated"),
+            "current_category": str(row.get("current_category", "") or "not_stated"),
+            "category_tried": str(row.get("category_tried", "") or "not_stated"),
+            "discovery_method": str(row.get("discovery_method", "") or "not_stated"),
+            "exploration_barrier": str(row.get("exploration_barrier", "") or "not_stated"),
+            "purchase_trigger": str(row.get("purchase_trigger", "") or "not_stated"),
+            "information_needed": str(row.get("information_needed", "") or "not_stated"),
+            "trust_signal": str(row.get("trust_signal", "") or "not_stated"),
+            "perceived_risk": str(row.get("perceived_risk", "") or "not_stated"),
+            "workaround": str(row.get("workaround", "") or "not_stated"),
+            "user_context": str(row.get("user_context", "") or "not_stated"),
+            "unmet_need": str(row.get("unmet_need_detail", "") or "not_stated"),
+            "evidence_quote": str(row.get("evidence_quote", "") or "not_stated"),
+            "classification_confidence": str(row.get("classification_confidence", "") or "medium"),
+        },
         "tags": tags,
     }
+
+
+def _fetch_all_analyzed_reviews_for_ask():
+    select_cols = (
+        "*,"
+        "raw_reviews(text,app,source,rating)"
+    )
+    rows = _fetch_all_rows("analyzed_reviews", select_cols)
+    return [_normalize_analyzed_row(row) for row in rows]
+
+
+def _build_claim_validator_prompt(question, answer_text, records):
+    evidence_lines = []
+    for rec in records:
+        rec_text = str(rec.get("text", "") or "").replace("\n", " ").strip()
+        evidence_lines.append(f"id={rec.get('id')} | text={rec_text}")
+    evidence_blob = "\n".join(evidence_lines)
+
+    return (
+        "Validate claims against evidence. Return ONLY JSON with key claims where each claim has: "
+        "claim_text, supporting_record_ids, support_level(one_of strong|partial|none), contradiction_status(one_of contradicted|not_contradicted). "
+        "Use only supplied IDs.\n\n"
+        f"Question: {question}\n\n"
+        f"Draft answer:\n{answer_text}\n\n"
+        f"Evidence:\n{evidence_blob}"
+    )
+
+
+def _validate_claims_with_model(question, answer_text, records):
+    if not records or not answer_text.strip():
+        return []
+
+    prompt = _build_claim_validator_prompt(question, answer_text, records)
+    response = client.chat.completions.create(
+        model=ASK_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a strict evidence validator.",
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+    parsed = _parse_json_object(response.choices[0].message.content)
+    claims = parsed.get("claims") if isinstance(parsed, dict) else []
+    if not isinstance(claims, list):
+        return []
+    normalized = []
+    for claim in claims:
+        if not isinstance(claim, dict):
+            continue
+        normalized.append(
+            {
+                "claim_text": str(claim.get("claim_text", "") or "").strip(),
+                "supporting_record_ids": [rid for rid in claim.get("supporting_record_ids", []) if rid is not None],
+                "support_level": str(claim.get("support_level", "none") or "none"),
+                "contradiction_status": str(claim.get("contradiction_status", "not_contradicted") or "not_contradicted"),
+            }
+        )
+    return normalized
+
+
+def _generate_research_answer(question, records, sufficiency, classified_total, pending_count):
+    if sufficiency.get("state") == "insufficient":
+        return build_insufficient_evidence_response(question, sufficiency), []
+
+    prompt = build_synthesis_prompt(question, records, sufficiency, classified_total, pending_count)
+    completion = client.chat.completions.create(
+        model=ASK_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a research analyst. Answer only from provided evidence. "
+                    "If evidence is limited, say so directly."
+                ),
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+        temperature=0,
+    )
+    answer = (completion.choices[0].message.content if completion.choices else "") or ""
+    answer = answer.strip()
+    claims = _validate_claims_with_model(question, answer, records)
+
+    weak_claims = [
+        claim for claim in claims
+        if claim.get("support_level") == "none"
+        or claim.get("contradiction_status") == "contradicted"
+        or len(claim.get("supporting_record_ids", [])) < 2
+    ]
+
+    if weak_claims:
+        weak_summary = "; ".join(claim.get("claim_text", "")[:120] for claim in weak_claims[:5])
+        rewrite_prompt = (
+            prompt
+            + "\n\nRe-write the answer by removing or softening unsupported claims. "
+            + "Unsupported claims detected: "
+            + weak_summary
+            + ". Ensure each major claim has at least 2 supporting record IDs."
+        )
+        completion_retry = client.chat.completions.create(
+            model=ASK_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a strict evidence-grounded analyst.",
+                },
+                {
+                    "role": "user",
+                    "content": rewrite_prompt,
+                },
+            ],
+            temperature=0,
+        )
+        answer = (completion_retry.choices[0].message.content if completion_retry.choices else answer) or answer
+        answer = answer.strip()
+        claims = _validate_claims_with_model(question, answer, records)
+
+    return answer, claims
+
+
+def _count_failed_records():
+    failed_path = Path(__file__).resolve().parent / "failed_ids.txt"
+    if not failed_path.exists():
+        return 0
+    unique_ids = set()
+    with failed_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            value = line.strip()
+            if value:
+                unique_ids.add(value)
+    return len(unique_ids)
 
 
 def _rank_reviews_tfidf(question, reviews, top_n=40):
@@ -597,60 +767,64 @@ def ask():
         return jsonify({"error": "Question cannot be empty"}), 400
 
     try:
-        selections = pick_retrieval_targets(question)
-        selected_reviews = retrieve_tagged_reviews(question, selections)
-        tag_matched_count = len(selected_reviews)
-        evidence_limited = len(selected_reviews) < 3
-        fallback_used = evidence_limited
+        debug_requested = bool(payload.get("debug", False)) and ASK_DEBUG_ENABLED
 
-        if evidence_limited:
-            selected_reviews = retrieve_fallback_reviews(question)
+        all_reviews = _fetch_all_analyzed_reviews_for_ask()
+        retrieval_result = run_hybrid_retrieval(question, all_reviews)
 
-        total_retrieved_count = len(selected_reviews)
-        if fallback_used:
-            confidence_level = "LOW"
-        elif tag_matched_count >= 20:
-            confidence_level = "HIGH"
-        elif tag_matched_count >= 8:
-            confidence_level = "MEDIUM"
-        else:
-            confidence_level = "LOW"
+        top_records = retrieval_result.top_records
+        total_retrieved_count = len(retrieval_result.candidates)
+        records_used = len(top_records)
+        classified_total = len(all_reviews)
+        total_raw_reviews = len(_fetch_all_rows("raw_reviews", "id"))
+        pending_count = max(0, total_raw_reviews - classified_total)
+        failed_count = _count_failed_records()
 
-        answer = _ask_groq(question, selected_reviews, total_retrieved_count)
-        violations = _validate_generated_answer(answer)
-        if violations:
-            retry_rule = _format_validator_retry_rule(violations)
-            answer_retry = _ask_groq_with_extra_rule(
-                question,
-                selected_reviews,
-                retry_rule,
-                total_retrieved_count,
-            )
-            retry_violations = _validate_generated_answer(answer_retry)
-            if retry_violations:
-                answer = (
-                    answer_retry
-                    + "\n\nWARNING: validator could not fully enforce output rules after one retry. "
-                    + "Remaining violations: "
-                    + "; ".join(retry_violations)
-                )
-            else:
-                answer = answer_retry
-
-        if evidence_limited:
-            answer = f"{answer}\n\nEvidence was limited for targeted tags, so broader review evidence was used."
-
-        return jsonify(
-            {
-                "answer": answer,
-                "sources_used": total_retrieved_count,
-                "selected_tag_filters": selections,
-                "fallback_used": fallback_used,
-                "tag_matched_count": tag_matched_count,
-                "total_retrieved_count": total_retrieved_count,
-                "confidence_level": confidence_level,
-            }
+        answer, claim_checks = _generate_research_answer(
+            question,
+            top_records,
+            retrieval_result.sufficiency,
+            classified_total,
+            pending_count,
         )
+
+        confidence_level = "LOW"
+        if retrieval_result.sufficiency.get("state") == "sufficient":
+            confidence_level = "HIGH"
+        elif retrieval_result.sufficiency.get("state") == "limited":
+            confidence_level = "MEDIUM"
+
+        provisional = pending_count > 0
+        if provisional:
+            answer += "\n\nData status: provisional (classification is incomplete)."
+
+        response_payload = {
+            "answer": answer,
+            "sources_used": records_used,
+            "selected_tag_filters": retrieval_result.selected_filters,
+            "fallback_used": False,
+            "tag_matched_count": retrieval_result.sufficiency.get("directly_relevant_records", 0),
+            "total_retrieved_count": total_retrieved_count,
+            "confidence_level": confidence_level,
+            "research_intents": retrieval_result.intents,
+            "sufficiency": retrieval_result.sufficiency,
+            "records_searched": total_retrieved_count,
+            "records_used": records_used,
+            "provisional": provisional,
+            "corpus_status": {
+                "total_raw_records": total_raw_reviews,
+                "classified_records": classified_total,
+                "pending_records": pending_count,
+                "failed_records": failed_count,
+                "percentage_classified": round((classified_total / total_raw_reviews * 100), 1) if total_raw_reviews else 0,
+            },
+            "claim_validation": claim_checks,
+        }
+
+        if debug_requested:
+            response_payload["debug"] = build_debug_payload(retrieval_result)
+
+        return jsonify(response_payload)
     except Exception as exc:
         app.logger.exception("/ask failed")
         return jsonify({"error": _public_ask_error_message(exc)}), 500
@@ -716,6 +890,8 @@ def dashboard_data_v2():
     total_reviews = len(raw_reviews)
     classified_count = len(analyzed_reviews)
     progress_pct = round((classified_count / total_reviews * 100), 1) if total_reviews else 0
+    pending_count = max(0, total_reviews - classified_count)
+    failed_count = _count_failed_records()
 
     ratings = []
     source_counts = {"play_store": 0, "app_store": 0, "unknown": 0}
@@ -809,13 +985,16 @@ def dashboard_data_v2():
     return jsonify(
         {
             "header_stats": {
-                "total_reviews": classified_count,
+                "total_reviews": total_reviews,
                 "classified_so_far": classified_count,
-                "progress_percentage": 100.0 if classified_count else 0,
+                "progress_percentage": progress_pct,
+                "pending_records": pending_count,
+                "failed_records": failed_count,
                 "play_store_count": source_counts["play_store"],
                 "app_store_count": source_counts["app_store"],
                 "average_rating": avg_rating,
                 "average_sentiment": avg_sentiment,
+                "provisional": pending_count > 0,
             },
             "source_split": source_split,
             "sentiment_distribution": {
@@ -833,6 +1012,13 @@ def dashboard_data_v2():
             },
             "methodology_note": "Tag percentages are calculated over the classified corpus size.",
             "app_counts": app_counts,
+            "corpus_status": {
+                "total_raw_records": total_reviews,
+                "classified_records": classified_count,
+                "pending_records": pending_count,
+                "failed_records": failed_count,
+                "percentage_classified": progress_pct,
+            },
         }
     )
 
