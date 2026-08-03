@@ -879,7 +879,6 @@
 
         <div class="ask-composer">
           <div class="chips-shell">
-            <button id="chipsToggle" class="tab-btn chips-toggle" type="button">Suggested questions</button>
             <div id="chips" class="chips" aria-label="Suggested questions"></div>
           </div>
 
@@ -950,14 +949,10 @@
   <script>
     (function () {
       var suggestedQuestions = [
-        "Why do users repeatedly buy from the same categories?",
-        "What prevents users from exploring new categories?",
         "How do users discover products today?",
-        "What role do habits play in shopping behavior?",
         "What information do users need before trying a new category?",
+        "Why do users order the same products repeatedly?",
         "What frustrations emerge repeatedly?",
-        "Which user segments are more likely to experiment?",
-        "What unmet needs emerge consistently?"
       ];
 
       var fieldOrder = [
@@ -995,7 +990,6 @@
       };
 
       var chips = document.getElementById("chips");
-      var chipsToggle = document.getElementById("chipsToggle");
       var questionInput = document.getElementById("questionInput");
       var askButton = document.getElementById("askButton");
       var clearThreadButton = document.getElementById("clearThreadButton");
@@ -1024,7 +1018,6 @@
       var askLoadingTimer = null;
       var askLoadingNode = null;
       var askThread = [];
-      var chipsExpanded = true;
       var ASK_THREAD_STORAGE_KEY = "dreAskThreadV1";
 
       function escapeHtml(text) {
@@ -1081,11 +1074,6 @@
         } catch (error) {
           askThread = [];
         }
-      }
-
-      function updateChipsVisibility() {
-        chips.style.display = chipsExpanded ? "flex" : "none";
-        chipsToggle.textContent = chipsExpanded ? "Hide suggested questions" : "Suggested questions";
       }
 
       function startAskLoadingStages() {
@@ -1596,8 +1584,6 @@
             answerMeta.style.display = "block";
             answerFallback.textContent = "";
             questionInput.value = "";
-            chipsExpanded = false;
-            updateChipsVisibility();
           })
           .catch(function (error) {
             answerBox.innerHTML = '<div class="notice-card">Couldn\'t reach the language model. Please try again in a moment.</div>';
@@ -1626,12 +1612,6 @@
         answerMeta.textContent = "Sources used: 0";
         answerMeta.style.display = "block";
         answerFallback.textContent = "";
-        chipsExpanded = true;
-        updateChipsVisibility();
-      });
-      chipsToggle.addEventListener("click", function () {
-        chipsExpanded = !chipsExpanded;
-        updateChipsVisibility();
       });
       questionInput.addEventListener("keydown", function (event) {
         if (event.key === "Enter") {
@@ -1671,12 +1651,10 @@
         }
       });
 
-      renderChips();
       loadAskThread();
-      chipsExpanded = askThread.length === 0;
-      updateChipsVisibility();
-      renderAskThread();
       applyTheme();
+      renderChips();
+      renderAskThread();
     })();
   </script>
 </body>
