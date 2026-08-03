@@ -497,104 +497,6 @@
       font-size: 1.22rem;
     }
 
-    .source-bar {
-      display: flex;
-      border: 1px solid var(--line);
-      min-height: 26px;
-      overflow: hidden;
-    }
-
-    .source-segment {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--text-strong);
-      padding: 0 6px;
-      white-space: nowrap;
-    }
-
-    .source-play {
-      background: color-mix(in srgb, var(--accent) 22%, var(--surface));
-      background-image: repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(26, 26, 26, 0.06) 6px, rgba(26, 26, 26, 0.06) 10px);
-    }
-
-    .source-app {
-      background: color-mix(in srgb, var(--accent) 12%, var(--surface));
-      border-left: 1px solid var(--line);
-    }
-
-    .legend-row {
-      margin-top: 8px;
-      display: flex;
-      gap: 14px;
-      flex-wrap: wrap;
-      font-size: 0.82rem;
-      color: var(--text-soft);
-    }
-
-    .legend-item {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .legend-chip {
-      width: 16px;
-      height: 10px;
-      border: 1px solid var(--line);
-      display: inline-block;
-    }
-
-    .sentiment-grid {
-      display: grid;
-      grid-template-columns: repeat(5, minmax(90px, 1fr));
-      gap: 8px;
-    }
-
-    .sentiment-segment {
-      border: 1px solid var(--line);
-      padding: 10px;
-      min-height: 92px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      gap: 6px;
-    }
-
-    .sentiment-scale-neg2 {
-      background: rgba(138, 60, 47, 0.2);
-    }
-
-    .sentiment-scale-neg1 {
-      background: rgba(138, 60, 47, 0.12);
-    }
-
-    .sentiment-scale-0 {
-      background: rgba(93, 87, 81, 0.1);
-    }
-
-    .sentiment-scale-pos1 {
-      background: rgba(77, 127, 87, 0.12);
-    }
-
-    .sentiment-scale-pos2 {
-      background: rgba(77, 127, 87, 0.2);
-    }
-
-    .sentiment-score {
-      font-family: var(--font-display);
-      font-size: 1.1rem;
-    }
-
-    .panels-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(260px, 1fr));
-      gap: 12px;
-      margin-top: 14px;
-    }
-
     .panel-card {
       border: 1px solid var(--line);
       background: var(--surface);
@@ -653,130 +555,10 @@
       background: var(--surface-soft);
     }
 
-    .heatmap-wrap {
-      overflow-x: auto;
-    }
-
-    .heatmap-table {
-      border-collapse: collapse;
-      width: 100%;
-      min-width: 760px;
-    }
-
-    .heatmap-table th,
-    .heatmap-table td {
-      border: 1px solid var(--line);
-      padding: 8px;
-      font-size: 0.8rem;
-      text-align: center;
-    }
-
-    .heatmap-table th {
-      background: var(--surface-soft);
-      color: var(--text-strong);
-      font-weight: 600;
-      position: sticky;
-      top: 0;
-      z-index: 1;
-    }
-
-    .heatmap-row-label {
-      text-align: left;
-      min-width: 180px;
-      background: var(--surface-soft);
-      font-weight: 600;
-    }
-
     .heatmap-note {
       margin-top: 8px;
       font-size: 0.82rem;
       color: var(--text-soft);
-    }
-
-    .drawer-backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(26, 26, 26, 0.34);
-      display: none;
-      align-items: stretch;
-      justify-content: flex-end;
-      z-index: 40;
-    }
-
-    .drawer-backdrop.open {
-      display: flex;
-      animation: fadeIn var(--motion-mid) ease;
-    }
-
-    .drawer {
-      width: min(560px, 100%);
-      height: 100%;
-      border-left: 1px solid var(--line);
-      background: var(--surface);
-      box-shadow: -8px 0 24px rgba(26, 26, 26, 0.18);
-      display: flex;
-      flex-direction: column;
-      animation: slideInRight var(--motion-mid) ease;
-    }
-
-    .drawer-header {
-      border-bottom: 1px solid var(--line);
-      padding: 14px;
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      align-items: flex-start;
-    }
-
-    .drawer-title {
-      margin: 0;
-      font-family: var(--font-display);
-      font-size: 1.1rem;
-    }
-
-    .drawer-close {
-      border: 1px solid var(--line);
-      background: var(--surface);
-      color: var(--text-strong);
-      padding: 6px 10px;
-      cursor: pointer;
-    }
-
-    .drawer-body {
-      padding: 14px;
-      overflow: auto;
-      display: grid;
-      gap: 10px;
-    }
-
-    .review-card {
-      border: 1px solid var(--line);
-      background: var(--surface-soft);
-      padding: 10px;
-    }
-
-    .review-meta {
-      font-size: 0.8rem;
-      color: var(--text-soft);
-      margin-bottom: 8px;
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .review-text {
-      margin: 0 0 8px;
-      line-height: 1.5;
-      font-size: 0.92rem;
-    }
-
-    .quote-highlight {
-      margin: 0;
-      padding: 8px;
-      border-left: 3px solid var(--accent);
-      background: color-mix(in srgb, var(--accent) 9%, var(--surface));
-      font-size: 0.84rem;
-      font-family: var(--font-display);
     }
 
     .sr-only {
@@ -800,23 +582,9 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-
-    @keyframes slideInRight {
-      from { transform: translateX(24px); opacity: 0.8; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-
     @media (max-width: 1020px) {
       .stats-grid {
         grid-template-columns: repeat(3, minmax(160px, 1fr));
-      }
-
-      .panels-grid {
-        grid-template-columns: 1fr;
       }
     }
 
@@ -838,10 +606,6 @@
 
       .stats-grid {
         grid-template-columns: repeat(2, minmax(120px, 1fr));
-      }
-
-      .sentiment-grid {
-        grid-template-columns: 1fr 1fr;
       }
 
       .title {
@@ -914,48 +678,8 @@
         <h3 id="userNeedsTitle" class="section-title">Top user needs</h3>
         <article id="userNeedsPanel" class="panel-card"></article>
       </section>
-
-      <section class="section-card" aria-labelledby="sourceSplitTitle">
-        <h3 id="sourceSplitTitle" class="section-title">Source Split</h3>
-        <div id="sourceSplitBar" class="source-bar" role="img" aria-label="Play Store and App Store share"></div>
-        <div class="legend-row" id="sourceSplitLegend"></div>
-      </section>
-
-      <section class="section-card" aria-labelledby="sentimentTitle">
-        <h3 id="sentimentTitle" class="section-title">Sentiment Distribution</h3>
-        <p class="heatmap-note">Each review was rated -2 to +2 by the classifier for expressed attitude toward Blinkit. Anchors include Hinglish terms, so non-English reviews were classified rather than dropped.</p>
-        <p class="heatmap-note">Angry (-2) - furious, scam, fraud; Dissatisfied (-1) - a complaint; Neutral (0) - neither clearly positive nor negative; Satisfied (+1) - works fine; Delighted (+2) - loves it.</p>
-        <div id="sentimentGrid" class="sentiment-grid"></div>
-      </section>
-
-      <section class="section-card" aria-labelledby="tagPanelsTitle">
-        <h3 id="tagPanelsTitle" class="section-title">Tag Frequency Panels</h3>
-        <div id="tagPanels" class="panels-grid"></div>
-        <p class="heatmap-note">Percentages are out of the classified corpus size.</p>
-      </section>
-
-      <section class="section-card" aria-labelledby="heatmapTitle">
-        <h3 id="heatmapTitle" class="section-title">Segment x Barrier Heatmap</h3>
-        <div class="heatmap-wrap">
-          <table class="heatmap-table" id="heatmapTable"></table>
-        </div>
-        <p id="heatmapNote" class="heatmap-note"></p>
-      </section>
     </section>
     </div>
-  </div>
-
-  <div class="drawer-backdrop" id="drawerBackdrop" aria-hidden="true">
-    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
-      <div class="drawer-header">
-        <div>
-          <h3 id="drawerTitle" class="drawer-title">Reviews</h3>
-          <div id="drawerSubtitle" class="dashboard-status"></div>
-        </div>
-        <button id="drawerClose" class="drawer-close" type="button">Close</button>
-      </div>
-      <div id="drawerBody" class="drawer-body"></div>
-    </aside>
   </div>
 
   <script>
@@ -966,34 +690,6 @@
         "Why do users order the same products repeatedly?",
         "What frustrations emerge repeatedly?",
       ];
-
-      var fieldOrder = [
-        "behavioral_driver",
-        "discovery_barrier",
-        "discovery_channel",
-        "frustration_type",
-        "segment_marker",
-        "unmet_need",
-        "categories"
-      ];
-
-      var fieldLabels = {
-        behavioral_driver: "Behavioral Driver",
-        discovery_barrier: "Discovery Barrier",
-        discovery_channel: "Discovery Channel",
-        frustration_type: "Frustration Type",
-        segment_marker: "Segment Marker",
-        unmet_need: "Unmet Need",
-        categories: "Categories"
-      };
-
-      var sentimentClassByScore = {
-        "-2": "sentiment-scale-neg2",
-        "-1": "sentiment-scale-neg1",
-        "0": "sentiment-scale-0",
-        "1": "sentiment-scale-pos1",
-        "2": "sentiment-scale-pos2"
-      };
 
       var tabs = Array.prototype.slice.call(document.querySelectorAll(".tab-btn"));
       var panels = {
@@ -1013,18 +709,6 @@
       var painPointsNote = document.getElementById("painPointsNote");
       var painPointsPanel = document.getElementById("painPointsPanel");
       var userNeedsPanel = document.getElementById("userNeedsPanel");
-      var sourceSplitBar = document.getElementById("sourceSplitBar");
-      var sourceSplitLegend = document.getElementById("sourceSplitLegend");
-      var sentimentGrid = document.getElementById("sentimentGrid");
-      var tagPanels = document.getElementById("tagPanels");
-      var heatmapTable = document.getElementById("heatmapTable");
-      var heatmapNote = document.getElementById("heatmapNote");
-
-      var drawerBackdrop = document.getElementById("drawerBackdrop");
-      var drawerClose = document.getElementById("drawerClose");
-      var drawerTitle = document.getElementById("drawerTitle");
-      var drawerSubtitle = document.getElementById("drawerSubtitle");
-      var drawerBody = document.getElementById("drawerBody");
       var themeToggle = document.getElementById("themeToggle");
 
       var darkMode = localStorage.getItem("dreTheme") === "dark";
@@ -1430,163 +1114,6 @@
         }).join("");
       }
 
-      function renderSourceSplit(split) {
-        var playPct = Number(getNested(split, ["play_store", "percentage"], 0)) || 0;
-        var appPct = Number(getNested(split, ["app_store", "percentage"], 0)) || 0;
-        var playCount = Number(getNested(split, ["play_store", "count"], 0)) || 0;
-        var appCount = Number(getNested(split, ["app_store", "count"], 0)) || 0;
-
-        sourceSplitBar.innerHTML = '<div class="source-segment source-play" style="width:' + playPct + '%">Play ' + playPct + '%</div>'
-          + '<div class="source-segment source-app" style="width:' + appPct + '%">App ' + appPct + '%</div>';
-
-        sourceSplitLegend.innerHTML = '<span class="legend-item"><span class="legend-chip source-play"></span>Play Store (' + humanize(playCount) + ')</span>'
-          + '<span class="legend-item"><span class="legend-chip source-app"></span>App Store (' + humanize(appCount) + ')</span>';
-      }
-
-      function renderSentiment(data) {
-        var segments = Array.isArray(data.segments) ? data.segments : [];
-        var sentimentLabels = {
-          "-2": "Angry",
-          "-1": "Dissatisfied",
-          "0": "Neutral / mixed",
-          "1": "Satisfied",
-          "2": "Delighted"
-        };
-        var html = segments.map(function (segment) {
-          var score = String(valueOrDefault(segment.score, 0));
-          var cls = sentimentClassByScore[score] || "sentiment-scale-0";
-          var label = sentimentLabels[score] || "Neutral / mixed";
-          var scoreLabel = score === "1" || score === "2" ? "+" + score : score;
-          return '<article class="sentiment-segment ' + cls + '">'
-            + '<div class="sentiment-score">' + escapeHtml(label) + ' <span class="dashboard-status">(' + escapeHtml(scoreLabel) + ')</span></div>'
-            + '<div>' + humanize(valueOrDefault(segment.count, 0)) + ' reviews</div>'
-            + '<div>' + escapeHtml(valueOrDefault(segment.percentage, 0)) + '%</div>'
-            + '</article>';
-        }).join("");
-        sentimentGrid.innerHTML = html;
-      }
-
-      function openReviewDrawer(field, tag) {
-        drawerTitle.textContent = (fieldLabels[field] || field) + " : " + tag;
-        drawerSubtitle.textContent = "Loading matching reviews...";
-        drawerBody.innerHTML = "";
-        drawerBackdrop.classList.add("open");
-        drawerBackdrop.setAttribute("aria-hidden", "false");
-
-        fetch("/reviews-by-tag?field=" + encodeURIComponent(field) + "&tag=" + encodeURIComponent(tag))
-          .then(function (response) {
-            return response.json().then(function (data) {
-              return { ok: response.ok, data: data };
-            });
-          })
-          .then(function (result) {
-            if (!result.ok) {
-              drawerSubtitle.textContent = result.data.error || "Failed to load reviews.";
-              return;
-            }
-
-            var reviews = Array.isArray(result.data.reviews) ? result.data.reviews : [];
-            drawerSubtitle.textContent = reviews.length + " review(s) shown (max 20).";
-
-            if (!reviews.length) {
-              drawerBody.innerHTML = '<div class="empty-state">No matching reviews returned for this tag.</div>';
-              return;
-            }
-
-            drawerBody.innerHTML = reviews.map(function (review) {
-              var source = review.source === "play_store" ? "Play Store" : (review.source === "app_store" ? "App Store" : "Unknown Source");
-              var rating = valueOrDefault(review.rating, "N/A");
-              var sentiment = valueOrDefault(review.sentiment_score, "N/A");
-              var quoteHtml = review.supporting_quote
-                ? '<p class="quote-highlight">' + escapeHtml(review.supporting_quote) + '</p>'
-                : "";
-
-              return '<article class="review-card">'
-                + '<div class="review-meta">'
-                + '<span><strong>Source:</strong> ' + escapeHtml(source) + '</span>'
-                + '<span><strong>App:</strong> ' + escapeHtml(review.app || "Unknown") + '</span>'
-                + '<span><strong>Rating:</strong> ' + escapeHtml(String(rating)) + '</span>'
-                + '<span><strong>Sentiment:</strong> ' + escapeHtml(String(sentiment)) + '</span>'
-                + '</div>'
-                + '<p class="review-text">' + escapeHtml(review.text || "") + '</p>'
-                + quoteHtml
-                + '</article>';
-            }).join("");
-          })
-          .catch(function (error) {
-            drawerSubtitle.textContent = "Drill-down error: " + error.message;
-          });
-      }
-
-      function renderTagPanels(panelData) {
-        var cards = fieldOrder.map(function (field) {
-          var panel = panelData[field] || { items: [], empty: true };
-          var title = fieldLabels[field] || field;
-
-          if (panel.empty) {
-            return '<article class="panel-card"><h4>' + escapeHtml(title) + '</h4>'
-              + '<div class="empty-state">No reviews tagged in this dimension - see methodology note.</div></article>';
-          }
-
-          var rows = (panel.items || []).map(function (item) {
-            var width = Math.max(0, Math.min(100, Number(valueOrDefault(item.percentage, 0))));
-            return '<div class="tag-row">'
-              + '<div class="tag-head">'
-              + '<button class="tag-btn" data-field="' + escapeHtml(field) + '" data-tag="' + escapeHtml(item.label) + '" type="button">' + escapeHtml(item.label) + '</button>'
-              + '<span>' + humanize(valueOrDefault(item.count, 0)) + ' (' + escapeHtml(valueOrDefault(item.percentage, 0)) + '%)</span>'
-              + '</div>'
-              + '<div class="tag-track"><div class="tag-fill" style="width:' + width + '%"></div></div>'
-              + '</div>';
-          }).join("");
-
-          return '<article class="panel-card"><h4>' + escapeHtml(title) + '</h4>' + rows + '</article>';
-        }).join("");
-
-        tagPanels.innerHTML = cards;
-        Array.prototype.slice.call(tagPanels.querySelectorAll(".tag-btn")).forEach(function (button) {
-          button.addEventListener("click", function () {
-            openReviewDrawer(button.getAttribute("data-field"), button.getAttribute("data-tag"));
-          });
-        });
-      }
-
-      function heatCellBackground(value, maxValue) {
-        if (!maxValue || value <= 0) {
-          return "transparent";
-        }
-        var ratio = Math.max(0, Math.min(1, value / maxValue));
-        var alpha = 0.1 + ratio * 0.45;
-        return "rgba(45, 106, 106, " + alpha.toFixed(3) + ")";
-      }
-
-      function renderHeatmap(heatmap) {
-        var rows = Array.isArray(heatmap.rows) ? heatmap.rows : [];
-        var columns = Array.isArray(heatmap.columns) ? heatmap.columns : [];
-        var values = Array.isArray(heatmap.values) ? heatmap.values : [];
-        var maxValue = Number(valueOrDefault(heatmap.max_value, 0)) || 0;
-
-        var header = '<tr><th>Segment / Barrier</th>' + columns.map(function (column) {
-          return '<th>' + escapeHtml(column) + '</th>';
-        }).join("") + '</tr>';
-
-        var body = rows.map(function (rowTag, rowIndex) {
-          var rowValues = Array.isArray(values[rowIndex]) ? values[rowIndex] : [];
-          var cells = columns.map(function (_, colIndex) {
-            var count = Number(valueOrDefault(rowValues[colIndex], 0));
-            return '<td style="background:' + heatCellBackground(count, maxValue) + '">' + humanize(count) + '</td>';
-          }).join("");
-          return '<tr><td class="heatmap-row-label">' + escapeHtml(rowTag) + '</td>' + cells + '</tr>';
-        }).join("");
-
-        heatmapTable.innerHTML = '<thead>' + header + '</thead><tbody>' + body + '</tbody>';
-
-        if (heatmap.is_sparse) {
-          heatmapNote.textContent = "Matrix is sparse: " + (Number(valueOrDefault(heatmap.sparsity_ratio, 0)) * 100).toFixed(1) + "% of cells are non-zero.";
-        } else {
-          heatmapNote.textContent = "Matrix density: " + (Number(valueOrDefault(heatmap.sparsity_ratio, 0)) * 100).toFixed(1) + "% of cells are non-zero.";
-        }
-      }
-
       function loadDashboard() {
         dashStatus.textContent = "Loading dashboard data...";
         return fetch("/dashboard-data-v2")
@@ -1603,10 +1130,6 @@
             renderHeaderStats(result.data.header_stats || {});
             renderDiscoveryPainPoints(result.data.tag_panels || {}, result.data.header_stats || {});
             renderTopUserNeeds(result.data.tag_panels || {});
-            renderSourceSplit(result.data.source_split || {});
-            renderSentiment(result.data.sentiment_distribution || {});
-            renderTagPanels(result.data.tag_panels || {});
-            renderHeatmap(result.data.heatmap || {});
             dashStatus.textContent = "Dashboard updated.";
             dashboardLoaded = true;
           })
@@ -1735,25 +1258,6 @@
       themeToggle.addEventListener("click", function () {
         darkMode = !darkMode;
         applyTheme();
-      });
-
-      drawerClose.addEventListener("click", function () {
-        drawerBackdrop.classList.remove("open");
-        drawerBackdrop.setAttribute("aria-hidden", "true");
-      });
-
-      drawerBackdrop.addEventListener("click", function (event) {
-        if (event.target === drawerBackdrop) {
-          drawerBackdrop.classList.remove("open");
-          drawerBackdrop.setAttribute("aria-hidden", "true");
-        }
-      });
-
-      document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape" && drawerBackdrop.classList.contains("open")) {
-          drawerBackdrop.classList.remove("open");
-          drawerBackdrop.setAttribute("aria-hidden", "true");
-        }
       });
 
       document.addEventListener("visibilitychange", function () {
