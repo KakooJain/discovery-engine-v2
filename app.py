@@ -37,6 +37,93 @@ app = Flask(__name__, template_folder="templates")
 ASK_DEBUG_ENABLED = os.getenv("ASK_DEBUG_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 ASK_MODEL = os.getenv("ASK_MODEL", "llama-3.1-8b-instant")
 
+
+class AskWorkflowError(Exception):
+    def __init__(self, status_code, error_code, message):
+        super().__init__(message)
+        self.status_code = status_code
+        self.error_code = error_code
+        self.message = message
+
+
+def _structured_ask_response(
+    status,
+    question,
+    message,
+    answer,
+    sources_used,
+    records_searched,
+    evidence,
+    error_code=None,
+    confidence_level="LOW",
+    selected_tag_filters=None,
+    research_intents=None,
+    sufficiency=None,
+    provisional=False,
+    corpus_status=None,
+    claim_validation=None,
+    retrieval_failed=False,
+    debug_payload=None,
+):
+    payload = {
+        "status": status,
+        "question": question,
+        "message": message,
+        "error_code": error_code,
+        "answer": answer,
+        "sources_used": sources_used,
+        "records_searched": records_searched,
+        "records_used": len(evidence or []),
+        "evidence": evidence or [],
+        "confidence_level": confidence_level,
+        "selected_tag_filters": selected_tag_filters or {},
+        "research_intents": research_intents or [],
+        "sufficiency": sufficiency or {},
+        "provisional": bool(provisional),
+        "corpus_status": corpus_status or {},
+        "claim_validation": claim_validation or [],
+        "retrieval_failed": bool(retrieval_failed),
+        "fallback_used": False,
+        "tag_matched_count": (sufficiency or {}).get("directly_relevant_records", 0),
+        "total_retrieved_count": records_searched,
+    }
+    if debug_payload is not None:
+        payload["debug"] = debug_payload
+    return payload
+
+
+def _is_quota_or_rate_limit_error(exc):
+    text = str(exc or "").lower()
+    return any(token in text for token in ["429", "quota", "rate limit", "rate_limit", "daily_limit_all_gemini_models_exhausted"])
+
+
+def _is_timeout_error(exc):
+    text = str(exc or "").lower()
+    return any(token in text for token in ["timeout", "timed out", "deadline exceeded"])
+
+
+def _is_model_unavailable_error(exc):
+    text = str(exc or "").lower()
+    return any(token in text for token in ["service unavailable", "temporarily unavailable", "model unavailable", "503"])
+
+
+def _to_evidence_rows(records):
+    evidence_rows = []
+    for rec in records or []:
+        evidence_rows.append(
+            {
+                "id": rec.get("id"),
+                "app": rec.get("app"),
+                "source": rec.get("source"),
+                "text": str(rec.get("text", "") or "").strip(),
+                "supporting_quote": str(rec.get("supporting_quote", "") or "").strip(),
+                "research_relevance": rec.get("research_relevance"),
+                "feedback_domain": rec.get("feedback_domain"),
+                "final_reranking_score": rec.get("final_reranking_score"),
+            }
+        )
+    return evidence_rows
+
 TAG_FIELD_MAP = {
     "behavioral_driver": {
         "habit-routine",
@@ -760,11 +847,33 @@ def health_check():
 def ask():
     payload = request.get_json(silent=True)
     if not payload or "question" not in payload:
-        return jsonify({"error": "Missing question field"}), 400
+        response_payload = _structured_ask_response(
+            status="error",
+            question="",
+            message="Missing question field",
+            answer=None,
+            sources_used=None,
+            records_searched=0,
+            evidence=[],
+            error_code="invalid_question",
+            retrieval_failed=True,
+        )
+        return jsonify(response_payload), 400
 
     question = str(payload.get("question", "")).strip()
     if not question:
-        return jsonify({"error": "Question cannot be empty"}), 400
+        response_payload = _structured_ask_response(
+            status="error",
+            question=question,
+            message="Question cannot be empty",
+            answer=None,
+            sources_used=None,
+            records_searched=0,
+            evidence=[],
+            error_code="invalid_question",
+            retrieval_failed=True,
+        )
+        return jsonify(response_payload), 400
 
     try:
         debug_requested = bool(payload.get("debug", False)) and ASK_DEBUG_ENABLED
@@ -773,6 +882,7 @@ def ask():
         retrieval_result = run_hybrid_retrieval(question, all_reviews)
 
         top_records = retrieval_result.top_records
+        evidence_rows = _to_evidence_rows(top_records)
         total_retrieved_count = len(retrieval_result.candidates)
         records_used = len(top_records)
         classified_total = len(all_reviews)
@@ -780,13 +890,135 @@ def ask():
         pending_count = max(0, total_raw_reviews - classified_total)
         failed_count = _count_failed_records()
 
-        answer, claim_checks = _generate_research_answer(
-            question,
-            top_records,
-            retrieval_result.sufficiency,
-            classified_total,
-            pending_count,
-        )
+        try:
+            answer, claim_checks = _generate_research_answer(
+                question,
+                top_records,
+                retrieval_result.sufficiency,
+                classified_total,
+                pending_count,
+            )
+            if not isinstance(answer, str):
+                raise AskWorkflowError(
+                    status_code=503,
+                    error_code="malformed_response",
+                    message="Synthesis service returned an invalid response format.",
+                )
+            if claim_checks is None:
+                claim_checks = []
+        except Exception as llm_exc:
+            debug_payload = build_debug_payload(retrieval_result) if debug_requested else None
+            corpus_status = {
+                "total_raw_records": total_raw_reviews,
+                "classified_records": classified_total,
+                "pending_records": pending_count,
+                "failed_records": failed_count,
+                "percentage_classified": round((classified_total / total_raw_reviews * 100), 1) if total_raw_reviews else 0,
+            }
+
+            if isinstance(llm_exc, AskWorkflowError):
+                response_payload = _structured_ask_response(
+                    status="error",
+                    question=question,
+                    message=llm_exc.message,
+                    answer=None,
+                    sources_used=records_used,
+                    records_searched=total_retrieved_count,
+                    evidence=evidence_rows,
+                    error_code=llm_exc.error_code,
+                    confidence_level="LOW",
+                    selected_tag_filters=retrieval_result.selected_filters,
+                    research_intents=retrieval_result.intents,
+                    sufficiency=retrieval_result.sufficiency,
+                    provisional=pending_count > 0,
+                    corpus_status=corpus_status,
+                    retrieval_failed=False,
+                    debug_payload=debug_payload,
+                )
+                return jsonify(response_payload), llm_exc.status_code
+
+            if _is_quota_or_rate_limit_error(llm_exc):
+                response_payload = _structured_ask_response(
+                    status="limited",
+                    question=question,
+                    message="The language-model quota has been reached. Retrieved evidence is shown below, but synthesis is temporarily unavailable.",
+                    answer=None,
+                    sources_used=records_used,
+                    records_searched=total_retrieved_count,
+                    evidence=evidence_rows,
+                    error_code="llm_quota_exceeded",
+                    confidence_level="LOW",
+                    selected_tag_filters=retrieval_result.selected_filters,
+                    research_intents=retrieval_result.intents,
+                    sufficiency=retrieval_result.sufficiency,
+                    provisional=pending_count > 0,
+                    corpus_status=corpus_status,
+                    retrieval_failed=False,
+                    debug_payload=debug_payload,
+                )
+                return jsonify(response_payload), 429
+
+            if _is_timeout_error(llm_exc):
+                response_payload = _structured_ask_response(
+                    status="error",
+                    question=question,
+                    message="Synthesis timed out. Retrieved evidence is shown below.",
+                    answer=None,
+                    sources_used=records_used,
+                    records_searched=total_retrieved_count,
+                    evidence=evidence_rows,
+                    error_code="request_timeout",
+                    confidence_level="LOW",
+                    selected_tag_filters=retrieval_result.selected_filters,
+                    research_intents=retrieval_result.intents,
+                    sufficiency=retrieval_result.sufficiency,
+                    provisional=pending_count > 0,
+                    corpus_status=corpus_status,
+                    retrieval_failed=False,
+                    debug_payload=debug_payload,
+                )
+                return jsonify(response_payload), 408
+
+            if _is_model_unavailable_error(llm_exc):
+                response_payload = _structured_ask_response(
+                    status="error",
+                    question=question,
+                    message="The model is temporarily unavailable. Retrieved evidence is shown below.",
+                    answer=None,
+                    sources_used=records_used,
+                    records_searched=total_retrieved_count,
+                    evidence=evidence_rows,
+                    error_code="model_unavailable",
+                    confidence_level="LOW",
+                    selected_tag_filters=retrieval_result.selected_filters,
+                    research_intents=retrieval_result.intents,
+                    sufficiency=retrieval_result.sufficiency,
+                    provisional=pending_count > 0,
+                    corpus_status=corpus_status,
+                    retrieval_failed=False,
+                    debug_payload=debug_payload,
+                )
+                return jsonify(response_payload), 503
+
+            response_payload = _structured_ask_response(
+                status="error",
+                question=question,
+                message="The request could not be completed. Retrieved evidence is shown below.",
+                answer=None,
+                sources_used=records_used,
+                records_searched=total_retrieved_count,
+                evidence=evidence_rows,
+                error_code="synthesis_failed",
+                confidence_level="LOW",
+                selected_tag_filters=retrieval_result.selected_filters,
+                research_intents=retrieval_result.intents,
+                sufficiency=retrieval_result.sufficiency,
+                provisional=pending_count > 0,
+                corpus_status=corpus_status,
+                retrieval_failed=False,
+                debug_payload=debug_payload,
+            )
+            return jsonify(response_payload), 500
 
         confidence_level = "LOW"
         if retrieval_result.sufficiency.get("state") == "sufficient":
@@ -798,36 +1030,46 @@ def ask():
         if provisional:
             answer += "\n\nData status: provisional (classification is incomplete)."
 
-        response_payload = {
-            "answer": answer,
-            "sources_used": records_used,
-            "selected_tag_filters": retrieval_result.selected_filters,
-            "fallback_used": False,
-            "tag_matched_count": retrieval_result.sufficiency.get("directly_relevant_records", 0),
-            "total_retrieved_count": total_retrieved_count,
-            "confidence_level": confidence_level,
-            "research_intents": retrieval_result.intents,
-            "sufficiency": retrieval_result.sufficiency,
-            "records_searched": total_retrieved_count,
-            "records_used": records_used,
-            "provisional": provisional,
-            "corpus_status": {
+        response_payload = _structured_ask_response(
+            status="success",
+            question=question,
+            message="OK",
+            answer=answer,
+            sources_used=records_used,
+            records_searched=total_retrieved_count,
+            evidence=evidence_rows,
+            error_code=None,
+            confidence_level=confidence_level,
+            selected_tag_filters=retrieval_result.selected_filters,
+            research_intents=retrieval_result.intents,
+            sufficiency=retrieval_result.sufficiency,
+            provisional=provisional,
+            corpus_status={
                 "total_raw_records": total_raw_reviews,
                 "classified_records": classified_total,
                 "pending_records": pending_count,
                 "failed_records": failed_count,
                 "percentage_classified": round((classified_total / total_raw_reviews * 100), 1) if total_raw_reviews else 0,
             },
-            "claim_validation": claim_checks,
-        }
-
-        if debug_requested:
-            response_payload["debug"] = build_debug_payload(retrieval_result)
-
+            claim_validation=claim_checks,
+            retrieval_failed=False,
+            debug_payload=build_debug_payload(retrieval_result) if debug_requested else None,
+        )
         return jsonify(response_payload)
     except Exception as exc:
         app.logger.exception("/ask failed")
-        return jsonify({"error": _public_ask_error_message(exc)}), 500
+        response_payload = _structured_ask_response(
+            status="error",
+            question=question,
+            message=_public_ask_error_message(exc),
+            answer=None,
+            sources_used=None,
+            records_searched=0,
+            evidence=[],
+            error_code="internal_server_error",
+            retrieval_failed=True,
+        )
+        return jsonify(response_payload), 500
 
 
 @app.route("/dashboard-data", methods=["GET"])

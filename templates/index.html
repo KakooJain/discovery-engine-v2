@@ -716,8 +716,13 @@
       var dashboardTimer = null;
       var askLoadingTimer = null;
       var askLoadingNode = null;
+      var askRequestController = null;
+      var askRequestTimeout = null;
+      var askRequestToken = 0;
+      var askState = "idle";
       var askThread = [];
       var ASK_THREAD_STORAGE_KEY = "dreAskThreadV1";
+      var ASK_MAX_REQUEST_MS = 90000;
 
       function escapeHtml(text) {
         return String(text)
@@ -775,26 +780,29 @@
         }
       }
 
-      function startAskLoadingStages() {
+      function startAskLoadingStages(initialState) {
         stopAskLoadingStages();
-        var stages = [
-          "Routing question to taxonomy...",
-          "Retrieving evidence...",
-          "Synthesising insights..."
-        ];
-        var stageIndex = 0;
+        var stateMessages = {
+          retrieving: "Retrieving relevant evidence...",
+          synthesising: "Synthesising insights..."
+        };
+        var stage = initialState || "retrieving";
         askLoadingNode = document.createElement("div");
         askLoadingNode.className = "loader-stage";
-        askLoadingNode.innerHTML = '<span class="loader-dot"></span><span>' + escapeHtml(stages[stageIndex]) + '</span>';
+        askLoadingNode.innerHTML = '<span class="loader-dot"></span><span>' + escapeHtml(stateMessages[stage] || stateMessages.retrieving) + '</span>';
         answerBox.appendChild(askLoadingNode);
         answerBox.scrollTop = answerBox.scrollHeight;
-        askLoadingTimer = setInterval(function () {
-          stageIndex = Math.min(stages.length - 1, stageIndex + 1);
-          if (askLoadingNode) {
-            askLoadingNode.innerHTML = '<span class="loader-dot"></span><span>' + escapeHtml(stages[stageIndex]) + '</span>';
-            answerBox.scrollTop = answerBox.scrollHeight;
-          }
-        }, 700);
+      }
+
+      function setAskLoadingMessage(state) {
+        var stateMessages = {
+          retrieving: "Retrieving relevant evidence...",
+          synthesising: "Synthesising insights..."
+        };
+        if (askLoadingNode && (state === "retrieving" || state === "synthesising")) {
+          askLoadingNode.innerHTML = '<span class="loader-dot"></span><span>' + escapeHtml(stateMessages[state]) + '</span>';
+          answerBox.scrollTop = answerBox.scrollHeight;
+        }
       }
 
       function stopAskLoadingStages() {
@@ -806,6 +814,134 @@
           askLoadingNode.parentNode.removeChild(askLoadingNode);
         }
         askLoadingNode = null;
+      }
+
+      function setAskState(nextState) {
+        askState = nextState;
+        if (nextState === "idle" || nextState === "success" || nextState === "limited" || nextState === "error") {
+          stopAskLoadingStages();
+          return;
+        }
+        if (nextState === "retrieving") {
+          if (!askLoadingNode) {
+            startAskLoadingStages("retrieving");
+          }
+          setAskLoadingMessage("retrieving");
+          return;
+        }
+        if (nextState === "synthesising") {
+          if (!askLoadingNode) {
+            startAskLoadingStages("synthesising");
+          }
+          setAskLoadingMessage("synthesising");
+        }
+      }
+
+      function clearAskRequestTimers() {
+        if (askLoadingTimer !== null) {
+          clearInterval(askLoadingTimer);
+          askLoadingTimer = null;
+        }
+        if (askRequestTimeout !== null) {
+          clearTimeout(askRequestTimeout);
+          askRequestTimeout = null;
+        }
+      }
+
+      function beginAskRequestLifecycle() {
+        askRequestToken += 1;
+        askRequestController = new AbortController();
+        askButton.disabled = true;
+        askButton.textContent = "Working...";
+        answerMeta.textContent = "Sources used: -";
+        answerMeta.style.display = "block";
+        answerFallback.textContent = "";
+        setAskState("retrieving");
+
+        var localToken = askRequestToken;
+        askLoadingTimer = setTimeout(function () {
+          if (localToken === askRequestToken && askState === "retrieving") {
+            setAskState("synthesising");
+          }
+        }, 900);
+
+        askRequestTimeout = setTimeout(function () {
+          if (askRequestController) {
+            askRequestController.abort();
+          }
+        }, ASK_MAX_REQUEST_MS);
+      }
+
+      function endAskRequestLifecycle(finalState) {
+        clearAskRequestTimers();
+        if (askRequestController) {
+          askRequestController = null;
+        }
+        setAskState(finalState || "idle");
+        askButton.disabled = false;
+        askButton.textContent = "Ask";
+      }
+
+      function renderEvidenceCards(evidenceRows) {
+        if (!Array.isArray(evidenceRows) || !evidenceRows.length) {
+          return '<div class="notice-card">No retrieved evidence rows were available.</div>';
+        }
+        return '<div class="insight-card"><h3 class="insight-title">Retrieved Evidence</h3>'
+          + evidenceRows.slice(0, 15).map(function (row, idx) {
+            var text = String(row.text || "").trim();
+            var quote = String(row.supporting_quote || "").trim();
+            return '<div class="tag-row">'
+              + '<div class="tag-head"><span>#' + escapeHtml(String(idx + 1)) + ' | id=' + escapeHtml(String(row.id || "n/a")) + ' | ' + escapeHtml(String(row.app || "unknown")) + '</span>'
+              + '<span>' + escapeHtml(String(row.feedback_domain || "other")) + ' | ' + escapeHtml(String(row.research_relevance || "irrelevant")) + '</span></div>'
+              + '<div class="insight-body">' + escapeHtml(text || quote || "(no text)") + '</div>'
+              + '</div>';
+          }).join("")
+          + '</div>';
+      }
+
+      function parseAskApiResponse(response, bodyText) {
+        var data = null;
+        try {
+          data = JSON.parse(bodyText);
+        } catch (error) {
+          return {
+            ok: false,
+            httpStatus: response.status,
+            data: {
+              status: "error",
+              error_code: "malformed_response",
+              message: "Malformed response from server.",
+              answer: null,
+              sources_used: null,
+              evidence: [],
+              records_searched: 0,
+              retrieval_failed: true
+            }
+          };
+        }
+
+        if (!data || typeof data !== "object" || !data.status) {
+          return {
+            ok: false,
+            httpStatus: response.status,
+            data: {
+              status: "error",
+              error_code: "malformed_response",
+              message: "Unexpected response shape.",
+              answer: null,
+              sources_used: null,
+              evidence: [],
+              records_searched: 0,
+              retrieval_failed: true
+            }
+          };
+        }
+
+        return {
+          ok: response.ok,
+          httpStatus: response.status,
+          data: data
+        };
       }
 
       function parseAnswerSections(answerText) {
@@ -1207,59 +1343,92 @@
           return;
         }
 
-        askButton.disabled = true;
-        askButton.textContent = "Working...";
-        answerMeta.textContent = "Sources used: -";
-        answerMeta.style.display = "block";
-        answerFallback.textContent = "";
-        startAskLoadingStages();
+        beginAskRequestLifecycle();
 
         fetch("/ask", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question: question })
+          body: JSON.stringify({ question: question }),
+          signal: askRequestController.signal
         })
           .then(function (response) {
-            return response.json().then(function (data) {
-              return { ok: response.ok, data: data };
+            return response.text().then(function (bodyText) {
+              return parseAskApiResponse(response, bodyText);
             });
           })
           .then(function (result) {
-            if (!result.ok) {
-              answerBox.innerHTML = '<div class="notice-card">' + escapeHtml(result.data.error || "Something went wrong generating this answer. Please try again.") + '</div>';
-              answerMeta.textContent = "";
-              answerMeta.style.display = "none";
+            var data = result.data || {};
+            var status = String(data.status || "error");
+
+            if (status === "success") {
+              appendAskTurn({
+                question: data.question || question,
+                answer: data.answer || "",
+                selected_tag_filters: data.selected_tag_filters || [],
+                confidence_level: data.confidence_level,
+                tag_matched_count: data.tag_matched_count,
+                total_retrieved_count: data.total_retrieved_count,
+                fallback_used: data.fallback_used
+              });
+
+              var searched = humanize(valueOrDefault(data.records_searched, data.total_retrieved_count || 0));
+              var used = humanize(valueOrDefault(data.sources_used, 0));
+              var provisionalText = data.provisional ? " | Provisional" : "";
+              answerMeta.textContent = "Records searched: " + searched + " | Sources used: " + used + provisionalText;
+              answerMeta.style.display = "block";
               answerFallback.textContent = "";
+              questionInput.value = "";
+              setAskState("success");
               return;
             }
 
-            appendAskTurn({
-              question: question,
-              answer: result.data.answer || "",
-              selected_tag_filters: result.data.selected_tag_filters || [],
-              confidence_level: result.data.confidence_level,
-              tag_matched_count: result.data.tag_matched_count,
-              total_retrieved_count: result.data.total_retrieved_count,
-              fallback_used: result.data.fallback_used
-            });
-            var searched = humanize(valueOrDefault(result.data.records_searched, result.data.total_retrieved_count || 0));
-            var used = humanize(valueOrDefault(result.data.records_used, result.data.sources_used || 0));
-            var provisionalText = result.data.provisional ? " | Provisional" : "";
-            answerMeta.textContent = "Records searched: " + searched + " | Sources used: " + used + provisionalText;
+            if (status === "limited") {
+              answerBox.innerHTML = '<div class="notice-card">' + escapeHtml(data.message || "The language-model quota has been reached. Retrieved evidence is shown below, but synthesis is temporarily unavailable.") + '</div>'
+                + renderEvidenceCards(data.evidence || []);
+              answerMeta.textContent = "Records searched: " + humanize(valueOrDefault(data.records_searched, 0)) + " | Sources used: " + humanize(valueOrDefault(data.sources_used, 0));
+              answerMeta.style.display = "block";
+              answerFallback.textContent = "Synthesis unavailable. You can retry.";
+              setAskState("limited");
+              return;
+            }
+
+            var statusToMessage = {
+              invalid_question: "Please enter a valid question.",
+              request_timeout: "The request could not be completed in time. Please retry.",
+              llm_quota_exceeded: "The language-model quota has been reached. Retrieved evidence is shown below, but synthesis is temporarily unavailable.",
+              model_unavailable: "Model temporarily unavailable. Please retry.",
+              malformed_response: "Malformed response received from server.",
+              internal_server_error: "The request could not be completed. Please retry."
+            };
+
+            var message = data.message || statusToMessage[data.error_code] || "The request could not be completed. Please retry.";
+            var evidenceHtml = Array.isArray(data.evidence) && data.evidence.length
+              ? renderEvidenceCards(data.evidence)
+              : "";
+            answerBox.innerHTML = '<div class="notice-card">' + escapeHtml(message) + '</div>' + evidenceHtml;
+
+            if (data.retrieval_failed) {
+              answerMeta.textContent = "Sources used: Unavailable";
+            } else {
+              answerMeta.textContent = "Records searched: " + humanize(valueOrDefault(data.records_searched, 0)) + " | Sources used: " + humanize(valueOrDefault(data.sources_used, 0));
+            }
             answerMeta.style.display = "block";
             answerFallback.textContent = "";
-            questionInput.value = "";
+            setAskState("error");
           })
           .catch(function (error) {
-            answerBox.innerHTML = '<div class="notice-card">Couldn\'t reach the language model. Please try again in a moment.</div>';
-            answerMeta.textContent = "";
-            answerMeta.style.display = "none";
+            var isAbort = error && error.name === "AbortError";
+            var message = isAbort
+              ? "The request timed out. Please retry."
+              : "The request could not be completed. Please retry.";
+            answerBox.innerHTML = '<div class="notice-card">' + escapeHtml(message) + '</div>';
+            answerMeta.textContent = "Sources used: Unavailable";
+            answerMeta.style.display = "block";
             answerFallback.textContent = "";
+            setAskState("error");
           })
           .finally(function () {
-            stopAskLoadingStages();
-            askButton.disabled = false;
-            askButton.textContent = "Ask";
+            endAskRequestLifecycle(askState === "retrieving" || askState === "synthesising" ? "idle" : askState);
           });
       }
 
