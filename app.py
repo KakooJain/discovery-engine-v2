@@ -809,9 +809,9 @@ def dashboard_data_v2():
     return jsonify(
         {
             "header_stats": {
-                "total_reviews": total_reviews,
+                "total_reviews": classified_count,
                 "classified_so_far": classified_count,
-                "progress_percentage": progress_pct,
+                "progress_percentage": 100.0 if classified_count else 0,
                 "play_store_count": source_counts["play_store"],
                 "app_store_count": source_counts["app_store"],
                 "average_rating": avg_rating,
