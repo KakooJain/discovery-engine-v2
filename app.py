@@ -115,6 +115,7 @@ SYSTEM_PROMPT = (
     "- Headlines must be claims, not topics. Write \"[A specific claim about user behaviour, not a topic label]\" not \"Habits and routines\".\n"
     "- Quotes must be copied exactly from the evidence, including Hinglish. Trim to the most telling fragment.\n"
     "- If fewer than five distinct reviews in the retrieved set genuinely support an insight, give only the ones that do and state the actual number. Never invent, pad, reuse the same quote twice, or stretch an unrelated quote to fit.\n"
+    "- Each quote must independently support the specific claim in that insight's headline; do not include a quote merely because it appears in the retrieved set. Two or three strongly relevant quotes are better than five loosely related ones. Never reuse a quote across insights. If a quote is about a different topic than the headline claims, exclude it.\n"
     "- If the evidence does not support an insight, say so plainly rather than stretching unrelated complaints (e.g. pricing or delivery) into discovery conclusions.\n"
     "- If evidence genuinely doesn't support three distinct insights, give fewer and say so in Confidence.\n"
     "- Any statement about how common a pattern is MUST use CLASSIFIED CORPUS count and percentage together (for example, '412 of 2,961, 13.9%').\n"
