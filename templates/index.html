@@ -902,6 +902,7 @@
       <div id="dashStatus" class="dashboard-status">Loading dashboard data...</div>
 
       <div id="statsGrid" class="stats-grid"></div>
+      <p class="dashboard-status">Classification sample limited by LLM free-tier quota. Percentages throughout are of the classified sample, not the full corpus.</p>
 
       <section class="section-card" aria-labelledby="painPointsTitle">
         <h3 id="painPointsTitle" class="section-title">Top pain points affecting cross-category discovery</h3>
@@ -1321,13 +1322,12 @@
         var classifiedSoFar = Number(valueOrDefault(stats.classified_so_far, 0)) || 0;
         var classifiedPct = totalReviews ? Math.round((classifiedSoFar / totalReviews) * 100) : 0;
         var classifiedValue = humanize(classifiedSoFar) + ' of ' + humanize(totalReviews) + ' (' + classifiedPct + '%)';
-        var classifiedExtra = '<div class="dashboard-status">Sampling capped by LLM free-tier quota - a documented limit, not an incomplete run.</div>';
 
         statsGrid.innerHTML = [
           statCard("Total Reviews", humanize(totalReviews)),
           statCard("Play Store", humanize(valueOrDefault(stats.play_store_count, 0))),
           statCard("App Store", humanize(valueOrDefault(stats.app_store_count, 0))),
-          statCard("Classified sample", classifiedValue, classifiedExtra)
+          statCard("Classified sample", classifiedValue)
         ].join("");
       }
 
