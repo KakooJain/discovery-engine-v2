@@ -329,24 +329,175 @@
       font-size: 0.78rem;
     }
 
+    .answer-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .summary-card {
+      border: 1px solid var(--line);
+      background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+      padding: 10px 12px;
+      border-radius: 12px;
+    }
+
+    .summary-label {
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-soft);
+      margin-bottom: 6px;
+    }
+
+    .summary-value {
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--text-strong);
+    }
+
+    .answer-structure {
+      display: grid;
+      gap: 10px;
+    }
+
+    .answer-section {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 12px 14px;
+      border-radius: 12px;
+    }
+
+    .answer-section.compact {
+      border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+    }
+
+    .answer-section-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-soft);
+      margin-bottom: 6px;
+    }
+
+    .answer-section-body {
+      color: var(--text-strong);
+      line-height: 1.55;
+    }
+
+    .insight-stack {
+      display: grid;
+      gap: 10px;
+    }
+
     .insight-card {
       border: 1px solid var(--line);
       background: var(--surface);
       padding: 14px;
-      margin-bottom: 12px;
+      border-radius: 12px;
+    }
+
+    .insight-head {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .insight-number {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+      color: var(--accent);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .insight-title-block {
+      flex: 1;
+      min-width: 0;
     }
 
     .insight-title {
-      margin: 0 0 10px;
+      margin: 0 0 4px;
       font-family: var(--font-display);
-      font-size: 1.2rem;
+      font-size: 1.08rem;
       color: var(--text-strong);
     }
 
-    .insight-body {
-      margin: 0;
+    .insight-meta {
+      color: var(--text-soft);
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+
+    .insight-section {
+      margin-top: 8px;
+    }
+
+    .insight-section p {
+      margin: 4px 0 0;
       color: var(--text-strong);
       line-height: 1.55;
+    }
+
+    .insight-metrics {
+      margin-top: 10px;
+      display: grid;
+      gap: 6px;
+      color: var(--text-soft);
+      font-size: 0.92rem;
+    }
+
+    .evidence-details {
+      margin-top: 10px;
+    }
+
+    .evidence-details summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .evidence-list {
+      margin: 8px 0 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .evidence-item {
+      border-left: 3px solid var(--accent);
+      padding-left: 8px;
+      color: var(--text-strong);
+    }
+
+    .evidence-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: var(--text-soft);
+      font-size: 0.8rem;
+      margin-bottom: 4px;
+    }
+
+    .evidence-text {
+      line-height: 1.5;
+      font-size: 0.95rem;
+    }
+
+    .evidence-link {
+      display: inline-block;
+      margin-top: 4px;
+      color: var(--accent);
+      font-size: 0.86rem;
     }
 
     .pull-quote {
@@ -377,6 +528,8 @@
       margin-top: 4px;
       font-size: 0.82rem;
       background: var(--surface-soft);
+      border-radius: 999px;
+      white-space: nowrap;
     }
 
     .confidence-label {
@@ -856,6 +1009,8 @@
         answerMeta.textContent = "Sources used: -";
         answerMeta.style.display = "block";
         answerFallback.textContent = "";
+        answerBox.innerHTML = '<div class="answer-empty">Preparing answer...</div>';
+        answerBox.scrollTop = 0;
         setAskState("retrieving");
 
         var localToken = askRequestToken;
@@ -944,70 +1099,6 @@
         };
       }
 
-      function parseAnswerSections(answerText) {
-        var text = String(answerText || "");
-        var insights = [];
-        var insightParts = text.split("**Insight ");
-
-        for (var i = 1; i < insightParts.length; i += 1) {
-          var part = insightParts[i];
-          var boldEnd = part.indexOf("**");
-          if (boldEnd === -1) {
-            continue;
-          }
-
-          var headingChunk = part.slice(0, boldEnd).trim();
-          var headingColon = headingChunk.indexOf(":");
-          if (headingColon === -1) {
-            continue;
-          }
-
-          var number = headingChunk.slice(0, headingColon).trim();
-          var title = headingChunk.slice(headingColon + 1).trim();
-          var body = part.slice(boldEnd + 2).trim();
-
-          var lines = body.split("\n");
-          var quotes = [];
-          var soWhat = "";
-          var keptLines = [];
-
-          for (var j = 0; j < lines.length; j += 1) {
-            var rawLine = lines[j] || "";
-            var line = rawLine.trim();
-            if (!line) {
-              continue;
-            }
-
-            if (line.indexOf(">") === 0) {
-              quotes.push(line.slice(1).trim().replace(/^"|"$/g, ""));
-              continue;
-            }
-
-            if (line.indexOf("**So what:**") === 0) {
-              soWhat = line.slice("**So what:**".length).trim();
-              continue;
-            }
-
-            if (line.toLowerCase().indexOf("so what:") === 0) {
-              soWhat = line.slice("So what:".length).trim();
-              continue;
-            }
-
-            keptLines.push(rawLine);
-          }
-
-          insights.push({
-            number: number,
-            title: title,
-            body: keptLines.join("\n").trim(),
-            quotes: quotes,
-            soWhat: soWhat
-          });
-        }
-
-        return { insights: insights };
-      }
-
       function renderSelectedFilters(filters) {
         if (!Array.isArray(filters) || filters.length === 0) {
           return "";
@@ -1020,70 +1111,124 @@
         return '<div class="selected-filters" aria-label="Selected tag filters">' + items + '</div>';
       }
 
-      function renderAnswer(answerText, selectedFilters, metrics) {
-        var parsed = parseAnswerSections(answerText);
-        var html = renderSelectedFilters(selectedFilters);
-        var metricData = metrics || {};
-        var fallbackUsed = Boolean(metricData.fallback_used);
-        var tagMatchedCount = Number(metricData.tag_matched_count);
-        var totalRetrievedCount = Number(metricData.total_retrieved_count);
-        if (!Number.isFinite(tagMatchedCount)) {
-          tagMatchedCount = 0;
+      function normalizeConfidenceLabel(label) {
+        var normalized = String(label || "").trim().toUpperCase();
+        if (["HIGH", "MEDIUM", "LOW"].indexOf(normalized) === -1) {
+          normalized = "LOW";
         }
-        if (!Number.isFinite(totalRetrievedCount)) {
-          totalRetrievedCount = 0;
-        }
-        var confidenceLevel = String(metricData.confidence_level || "LOW").toUpperCase();
-        if (["HIGH", "MEDIUM", "LOW"].indexOf(confidenceLevel) === -1) {
-          confidenceLevel = "LOW";
-        }
+        return normalized;
+      }
 
-        if (!parsed.insights.length) {
-          html += '<p class="insight-body">' + nlToBr(answerText || "No answer returned.") + '</p>';
-        } else {
-          parsed.insights.forEach(function (insight) {
-            html += '<article class="insight-card">';
-            html += '<h3 class="insight-title">Insight ' + escapeHtml(insight.number) + ': ' + escapeHtml(insight.title) + '</h3>';
-            html += '<p class="insight-body">' + nlToBr(insight.body || "") + '</p>';
-            (Array.isArray(insight.quotes) ? insight.quotes : []).forEach(function (quote) {
-              html += '<blockquote class="pull-quote">"' + escapeHtml(quote) + '"</blockquote>';
-            });
-            if (insight.soWhat) {
-              html += '<div class="so-what"><strong>So what:</strong> ' + escapeHtml(insight.soWhat) + '</div>';
-            }
-            html += '</article>';
+      function getConfidenceClass(label) {
+        var normalized = normalizeConfidenceLabel(label);
+        if (normalized === "HIGH") {
+          return "confidence-high";
+        }
+        if (normalized === "MEDIUM") {
+          return "confidence-medium";
+        }
+        return "confidence-low";
+      }
+
+      function renderStructuredAnswer(answerData, responseData) {
+        var data = answerData || {};
+        var metrics = responseData || {};
+        var html = [];
+        var selectedFilters = Array.isArray(metrics.selected_tag_filters) ? metrics.selected_tag_filters : [];
+        var evidenceRows = Array.isArray(metrics.evidence) ? metrics.evidence : [];
+        var evidenceSources = [];
+        evidenceRows.forEach(function (row) {
+          var source = String(row && row.source ? row.source : row && row.app ? row.app : "unknown").trim();
+          if (source && evidenceSources.indexOf(source) === -1) {
+            evidenceSources.push(source);
+          }
+        });
+        var classifiedCount = Number(metrics.corpus_status && metrics.corpus_status.classified_records ? metrics.corpus_status.classified_records : 0) || 0;
+        var pendingCount = Number(metrics.corpus_status && metrics.corpus_status.pending_records ? metrics.corpus_status.pending_records : 0) || 0;
+        var contradictory = data.contradictory_evidence || {};
+        var insightCount = Array.isArray(data.insights) ? data.insights.length : 0;
+        var confidenceLabel = normalizeConfidenceLabel(metrics.confidence_level || data.confidence_level || "LOW");
+        var supportingCount = 0;
+        if (Array.isArray(data.insights)) {
+          data.insights.forEach(function (insight) {
+            supportingCount += Number(insight.evidence_count || 0) || 0;
           });
         }
 
-        var confClass = "confidence-low";
-        if (confidenceLevel === "HIGH") {
-          confClass = "confidence-high";
-        } else if (confidenceLevel === "MEDIUM") {
-          confClass = "confidence-medium";
+        html.push(renderSelectedFilters(selectedFilters));
+        html.push('<div class="answer-summary-grid">');
+        html.push('<div class="summary-card"><div class="summary-label">Eligible records</div><div class="summary-value">' + humanize(Number(metrics.records_searched || metrics.total_retrieved_count || 0)) + '</div></div>');
+        html.push('<div class="summary-card"><div class="summary-label">Supporting records</div><div class="summary-value">' + humanize(supportingCount) + '</div></div>');
+        html.push('<div class="summary-card"><div class="summary-label">Contradictory records</div><div class="summary-value">' + humanize(Number(contradictory.record_count || 0)) + '</div></div>');
+        html.push('<div class="summary-card"><div class="summary-label">Sources represented</div><div class="summary-value">' + humanize(evidenceSources.length) + '</div></div>');
+        html.push('<div class="summary-card"><div class="summary-label">Classified records</div><div class="summary-value">' + humanize(classifiedCount) + '</div></div>');
+        html.push('<div class="summary-card"><div class="summary-label">Pending records</div><div class="summary-value">' + humanize(pendingCount) + '</div></div>');
+        html.push('</div>');
+
+        html.push('<article class="answer-structure">');
+        if (data.question) {
+          html.push('<section class="answer-section"><div class="answer-section-label">Question</div><div class="answer-section-body">' + escapeHtml(data.question) + '</div></section>');
+        }
+        if (data.direct_answer) {
+          html.push('<section class="answer-section"><div class="answer-section-label">Direct answer</div><div class="answer-section-body">' + escapeHtml(data.direct_answer) + '</div></section>');
         }
 
-        var confidenceExplanation = confidenceLevel + " - " + humanize(tagMatchedCount) + " reviews matched on taxonomy tags.";
-        if (fallbackUsed) {
-          confidenceExplanation = "LOW - taxonomy matched fewer than 3 reviews, so evidence was retrieved by keyword search instead.";
+        if (insightCount) {
+          html.push('<section class="answer-section"><div class="answer-section-label">Key insights</div><div class="insight-stack">');
+          data.insights.forEach(function (insight, index) {
+            var insightLabel = String(index + 1) + '. ' + (insight.title || "Insight");
+            var evidenceCount = Number(insight.evidence_count || 0) || 0;
+            var eligibleCount = Number(insight.eligible_record_count || 0) || 0;
+            var excerpts = Array.isArray(insight.evidence_excerpts) ? insight.evidence_excerpts : [];
+            var excerptMarkup = excerpts.length
+              ? excerpts.slice(0, 3).map(function (excerpt) {
+                  var text = excerpt && excerpt.text ? excerpt.text : "";
+                  var source = excerpt && excerpt.source ? excerpt.source : "";
+                  var date = excerpt && excerpt.date ? excerpt.date : "";
+                  var rating = excerpt && excerpt.rating ? excerpt.rating : "";
+                  var link = excerpt && excerpt.link ? excerpt.link : "";
+                  return '<li class="evidence-item">'
+                    + '<div class="evidence-meta">' + (source ? '<span>' + escapeHtml(source) + '</span>' : '') + (date ? '<span>' + escapeHtml(date) + '</span>' : '') + (rating ? '<span>' + escapeHtml(rating) + '</span>' : '') + '</div>'
+                    + '<div class="evidence-text">' + escapeHtml(text) + '</div>'
+                    + (link ? '<a class="evidence-link" href="' + escapeHtml(link) + '" target="_blank" rel="noreferrer">Open source</a>' : '')
+                    + '</li>';
+                }).join("")
+              : '<li class="evidence-item">No supporting excerpts were available for this insight.</li>';
+
+            html.push('<article class="insight-card">');
+            html.push('<div class="insight-head">');
+            html.push('<div class="insight-number">' + escapeHtml(String(index + 1)) + '</div>');
+            html.push('<div class="insight-title-block"><h3 class="insight-title">' + escapeHtml(insightLabel) + '</h3><div class="insight-meta">' + escapeHtml((insight.observation || "").slice(0, 140)) + '</div></div>');
+            html.push('<span class="confidence ' + getConfidenceClass(insight.confidence || confidenceLabel) + '"><span class="confidence-label">' + escapeHtml(String(insight.confidence || confidenceLabel).toUpperCase()) + '</span></span>');
+            html.push('</div>');
+            html.push('<div class="insight-body"><div class="insight-section"><strong>Observation</strong><p>' + escapeHtml(insight.observation || "") + '</p></div>');
+            html.push('<div class="insight-section"><strong>Why it matters</strong><p>' + escapeHtml(insight.why_it_matters || "") + '</p></div>');
+            html.push('<div class="insight-metrics"><span>Evidence: ' + humanize(evidenceCount) + ' of ' + humanize(eligibleCount) + ' eligible records</span><span>Product opportunity: ' + escapeHtml(insight.product_opportunity || "") + '</span></div>');
+            html.push('<details class="evidence-details"><summary>Supporting evidence</summary><ul class="evidence-list">' + excerptMarkup + '</ul></details>');
+            html.push('</div>');
+            html.push('</article>');
+          });
+          html.push('</div></section>');
         }
 
-        var evidenceLine = fallbackUsed
-          ? "Evidence: keyword fallback - taxonomy found too few matches"
-          : "Evidence: matched on taxonomy tags";
+        if (contradictory.present) {
+          html.push('<section class="answer-section"><div class="answer-section-label">Contradictory evidence</div><div class="answer-section-body">' + escapeHtml(contradictory.summary || "") + '</div></section>');
+        }
 
-        html += '<div class="confidence ' + confClass + '">';
-        html += '<span class="confidence-label">' + confidenceLevel + '</span>';
-        html += '<span>' + escapeHtml(confidenceExplanation) + '</span>';
-        html += '</div>';
-        html += '<div class="ask-note">HIGH = 20+ tag-matched reviews. MEDIUM = 8-19. LOW = under 8, or keyword fallback used.</div>';
-        html += '<div class="ask-note">' + escapeHtml(evidenceLine) + '</div>';
+        html.push('<section class="answer-section compact"><div class="answer-section-label">Evidence status</div><div class="answer-section-body">' + escapeHtml(String(data.evidence_status || "limited").toUpperCase()) + ' — ' + escapeHtml(data.data_limitations || "") + '</div></section>');
 
-        return html;
+        if (data.data_limitations) {
+          html.push('<section class="answer-section"><div class="answer-section-label">Data limitations</div><div class="answer-section-body">' + escapeHtml(data.data_limitations) + '</div></section>');
+        }
+
+        html.push('</article>');
+        return html.join("");
       }
 
       function renderAskThread() {
         if (!askThread.length) {
           answerBox.innerHTML = '<p class="answer-empty">Enter a question and press Ask.</p>';
+          answerBox.scrollTop = 0;
           return;
         }
 
@@ -1091,26 +1236,18 @@
           return '<article class="chat-turn">'
             + '<div class="stat-label">Question</div>'
             + '<p class="chat-question">' + escapeHtml(entry.question || "") + '</p>'
-            + renderAnswer(entry.answer || "", entry.selected_tag_filters || [], {
-              confidence_level: entry.confidence_level,
-              tag_matched_count: entry.tag_matched_count,
-              total_retrieved_count: entry.total_retrieved_count,
-              fallback_used: entry.fallback_used
-            })
+            + renderStructuredAnswer(entry.answer_data || {}, entry)
             + '</article>';
         }).join("");
 
         answerBox.innerHTML = html;
+        answerBox.scrollTop = 0;
       }
 
       function appendAskTurn(entry) {
         askThread.push(entry);
         persistAskThread();
         renderAskThread();
-        var turns = answerBox.querySelectorAll(".chat-turn");
-        if (turns.length) {
-          turns[turns.length - 1].scrollIntoView({ behavior: "smooth", block: "end" });
-        }
       }
 
       function valueOrDefault(value, fallback) {
@@ -1364,11 +1501,17 @@
               appendAskTurn({
                 question: data.question || question,
                 answer: data.answer || "",
+                answer_data: data.answer_data || {},
                 selected_tag_filters: data.selected_tag_filters || [],
                 confidence_level: data.confidence_level,
                 tag_matched_count: data.tag_matched_count,
                 total_retrieved_count: data.total_retrieved_count,
-                fallback_used: data.fallback_used
+                fallback_used: data.fallback_used,
+                evidence: data.evidence || [],
+                corpus_status: data.corpus_status || {},
+                records_searched: data.records_searched,
+                sources_used: data.sources_used,
+                provisional: data.provisional
               });
 
               var searched = humanize(valueOrDefault(data.records_searched, data.total_retrieved_count || 0));
@@ -1384,11 +1527,12 @@
 
             if (status === "limited") {
               var limitedSummary = data.answer
-                ? '<div class="insight-body" style="white-space:pre-line">' + escapeHtml(data.answer) + '</div>'
+                ? '<div class="answer-section"><div class="answer-section-label">Direct answer</div><div class="answer-section-body">' + escapeHtml(data.answer) + '</div></div>'
                 : '';
               answerBox.innerHTML = '<div class="notice-card">' + escapeHtml(data.message || "The language-model quota has been reached. Retrieved evidence is shown below, but synthesis is temporarily unavailable.") + '</div>'
                 + limitedSummary
                 + renderEvidenceCards(data.evidence || []);
+              answerBox.scrollTop = 0;
               answerMeta.textContent = "Records searched: " + humanize(valueOrDefault(data.records_searched, 0)) + " | Sources used: " + humanize(valueOrDefault(data.sources_used, 0));
               answerMeta.style.display = "block";
               answerFallback.textContent = "Synthesis unavailable. You can retry.";
@@ -1410,6 +1554,7 @@
               ? renderEvidenceCards(data.evidence)
               : "";
             answerBox.innerHTML = '<div class="notice-card">' + escapeHtml(message) + '</div>' + evidenceHtml;
+            answerBox.scrollTop = 0;
 
             if (data.retrieval_failed) {
               answerMeta.textContent = "Sources used: Unavailable";
@@ -1426,6 +1571,7 @@
               ? "The request timed out. Please retry."
               : "The request could not be completed. Please retry.";
             answerBox.innerHTML = '<div class="notice-card">' + escapeHtml(message) + '</div>';
+            answerBox.scrollTop = 0;
             answerMeta.textContent = "Sources used: Unavailable";
             answerMeta.style.display = "block";
             answerFallback.textContent = "";

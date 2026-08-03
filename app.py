@@ -46,6 +46,38 @@ class AskWorkflowError(Exception):
         self.message = message
 
 
+def _normalize_confidence_label(value, support_count=0, eligible_count=0, classification_coverage_incomplete=False, evidence_indirect=False, keyword_fallback=False, contradiction_present=False, source_count=1):
+    base_label = str(value or "").strip().lower()
+    if base_label not in {"low", "medium", "high"}:
+        if support_count >= 20:
+            base_label = "high"
+        elif support_count >= 8:
+            base_label = "medium"
+        else:
+            base_label = "low"
+
+    label = base_label
+    downgrade = 0
+    if classification_coverage_incomplete:
+        downgrade += 1
+    if evidence_indirect:
+        downgrade += 1
+    if keyword_fallback:
+        downgrade += 1
+    if contradiction_present:
+        downgrade += 1
+    if source_count <= 1:
+        downgrade += 1
+
+    if downgrade:
+        if label == "high":
+            label = "medium"
+        elif label == "medium":
+            label = "low"
+
+    return label
+
+
 def _structured_ask_response(
     status,
     question,
@@ -64,6 +96,7 @@ def _structured_ask_response(
     claim_validation=None,
     retrieval_failed=False,
     debug_payload=None,
+    answer_data=None,
 ):
     payload = {
         "status": status,
@@ -71,6 +104,7 @@ def _structured_ask_response(
         "message": message,
         "error_code": error_code,
         "answer": answer,
+        "answer_data": answer_data or {},
         "sources_used": sources_used,
         "records_searched": records_searched,
         "records_used": len(evidence or []),
@@ -209,6 +243,202 @@ def _build_limited_answer(evidence_rows):
         lines.append("[Review excerpt]")
 
     return "\n".join(lines)
+
+
+def _build_empty_answer_data(question, evidence_rows=None, evidence_status="limited"):
+    return {
+        "question": question or "",
+        "direct_answer": "The retrieved evidence is too limited to support a confident answer yet.",
+        "insights": [],
+        "contradictory_evidence": {
+            "present": False,
+            "summary": "No meaningful contradictory evidence found in the retrieved sample.",
+            "record_count": 0,
+        },
+        "evidence_status": evidence_status,
+        "data_limitations": "Provisional result: evidence coverage is limited.",
+        "supporting_evidence": [
+            {
+                "id": row.get("id"),
+                "source": row.get("app") or row.get("source") or "unknown",
+                "text": str(row.get("text", "") or "").strip(),
+            }
+            for row in (evidence_rows or [])[:3]
+        ],
+    }
+
+
+def _sanitize_visible_text(value):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = text.replace("**", "")
+    text = re.sub(r"^#{1,6}\s*", "", text, flags=re.MULTILINE)
+    text = text.replace("```", "")
+    return text.strip()
+
+
+def _normalize_insight_payload(insight, eligible_record_count, evidence_count, contradiction_present, keyword_fallback, evidence_indirect, source_count):
+    if not isinstance(insight, dict):
+        return {}
+
+    title = _sanitize_visible_text(insight.get("title"))
+    observation = _sanitize_visible_text(insight.get("observation"))
+    why_it_matters = _sanitize_visible_text(insight.get("why_it_matters"))
+    product_opportunity = _sanitize_visible_text(insight.get("product_opportunity"))
+    confidence = _normalize_confidence_label(
+        insight.get("confidence"),
+        support_count=int(evidence_count or 0),
+        eligible_count=int(eligible_record_count or 0),
+        classification_coverage_incomplete=False,
+        evidence_indirect=evidence_indirect,
+        keyword_fallback=keyword_fallback,
+        contradiction_present=contradiction_present,
+        source_count=source_count,
+    )
+
+    evidence_excerpts = []
+    for excerpt in insight.get("evidence_excerpts", []) or []:
+        if isinstance(excerpt, dict):
+            evidence_excerpts.append(
+                {
+                    "text": _sanitize_visible_text(excerpt.get("text")),
+                    "source": _sanitize_visible_text(excerpt.get("source")),
+                    "date": _sanitize_visible_text(excerpt.get("date")),
+                    "rating": _sanitize_visible_text(excerpt.get("rating")),
+                    "link": _sanitize_visible_text(excerpt.get("link")),
+                }
+            )
+        elif isinstance(excerpt, str):
+            evidence_excerpts.append({"text": _sanitize_visible_text(excerpt), "source": "", "date": "", "rating": "", "link": ""})
+
+    supporting_ids = []
+    for record_id in insight.get("supporting_record_ids", []) or []:
+        if record_id is None:
+            continue
+        supporting_ids.append(record_id)
+
+    return {
+        "title": title,
+        "observation": observation,
+        "why_it_matters": why_it_matters,
+        "evidence_count": int(evidence_count or 0),
+        "eligible_record_count": int(eligible_record_count or 0),
+        "supporting_record_ids": supporting_ids,
+        "evidence_excerpts": evidence_excerpts,
+        "product_opportunity": product_opportunity,
+        "confidence": confidence,
+    }
+
+
+def _validate_synthesis_payload(payload, question, records, evidence_status_hint=None):
+    if not isinstance(payload, dict):
+        return None
+
+    direct_answer = _sanitize_visible_text(payload.get("direct_answer"))
+    if not direct_answer:
+        return None
+
+    insights = payload.get("insights")
+    if not isinstance(insights, list):
+        return None
+
+    filtered_insights = []
+    seen_titles = set()
+    for insight in insights[:3]:
+        normalized = _normalize_insight_payload(
+            insight,
+            eligible_record_count=max(1, len(records)),
+            evidence_count=int((insight or {}).get("evidence_count", 0) or 0),
+            contradiction_present=bool((payload.get("contradictory_evidence") or {}).get("present", False)),
+            keyword_fallback=False,
+            evidence_indirect=evidence_status_hint in {"limited", "insufficient"},
+            source_count=max(1, len({str(item.get("source") or "") for item in (insight.get("evidence_excerpts") or []) if isinstance(item, dict)})),
+        )
+        if not normalized.get("title"):
+            continue
+        if normalized["title"] in seen_titles:
+            continue
+        seen_titles.add(normalized["title"])
+        filtered_insights.append(normalized)
+
+    if not filtered_insights:
+        return None
+
+    if len(filtered_insights) > 3:
+        filtered_insights = filtered_insights[:3]
+
+    contradictory_evidence = payload.get("contradictory_evidence")
+    if not isinstance(contradictory_evidence, dict):
+        contradictory_evidence = {}
+
+    present = bool(contradictory_evidence.get("present", False))
+    summary = _sanitize_visible_text(contradictory_evidence.get("summary"))
+    if not present and not summary:
+        summary = "No meaningful contradictory evidence found in the retrieved sample."
+    if present and not summary:
+        summary = "Some evidence points in a different direction."
+    record_count = int(contradictory_evidence.get("record_count", 0) or 0)
+    if not present:
+        record_count = 0
+
+    evidence_status = str(payload.get("evidence_status") or evidence_status_hint or "limited").strip().lower()
+    if evidence_status not in {"sufficient", "limited", "insufficient"}:
+        evidence_status = "limited"
+
+    data_limitations = _sanitize_visible_text(payload.get("data_limitations"))
+    if not data_limitations:
+        data_limitations = "Provisional result: evidence coverage is limited."
+
+    return {
+        "question": _sanitize_visible_text(question),
+        "direct_answer": direct_answer,
+        "insights": filtered_insights,
+        "contradictory_evidence": {
+            "present": present,
+            "summary": summary,
+            "record_count": record_count,
+        },
+        "evidence_status": evidence_status,
+        "data_limitations": data_limitations,
+    }
+
+
+def _build_safe_structured_fallback(question, records, sufficiency, pending_count, evidence_rows=None):
+    evidence_status = str(sufficiency.get("state") or "limited").strip().lower()
+    if evidence_status not in {"sufficient", "limited", "insufficient"}:
+        evidence_status = "limited"
+
+    base_record = (records or [None])[0]
+    fallback_text = "The retrieved evidence is too limited to support a confident answer yet."
+    if base_record is not None:
+        fallback_text = f"The retrieved evidence points to {str(base_record.get('text', '') or '').strip()[:120]}"
+
+    data_limitations = "Provisional result: 0 of 0 records classified." if pending_count <= 0 else f"Provisional result: {pending_count} records are still pending classification."
+    return {
+        "question": question or "",
+        "direct_answer": fallback_text,
+        "insights": [
+            {
+                "title": "Evidence is still too limited for a strong claim",
+                "observation": "The retrieved records do not yet provide enough specific support for a confident behavioural finding.",
+                "why_it_matters": "This keeps the answer cautious and avoids overstating the evidence.",
+                "evidence_count": min(1, max(0, len(records))),
+                "eligible_record_count": max(1, len(records)),
+                "supporting_record_ids": [rec.get("id") for rec in records[:1] if rec.get("id") is not None],
+                "evidence_excerpts": [],
+                "product_opportunity": "Capture more discovery-specific evidence before making product decisions.",
+                "confidence": "low",
+            }
+        ],
+        "contradictory_evidence": {
+            "present": False,
+            "summary": "No meaningful contradictory evidence found in the retrieved sample.",
+            "record_count": 0,
+        },
+        "evidence_status": evidence_status,
+        "data_limitations": data_limitations,
+    }
 
 TAG_FIELD_MAP = {
     "behavioral_driver": {
@@ -787,46 +1017,17 @@ def _generate_research_answer(question, records, sufficiency, classified_total, 
             },
         ],
         temperature=0,
+        response_format={"type": "json_object"},
     )
-    answer = (completion.choices[0].message.content if completion.choices else "") or ""
-    answer = answer.strip()
-    claims = _validate_claims_with_model(question, answer, records)
+    raw_answer = (completion.choices[0].message.content if completion.choices else "") or ""
+    raw_answer = raw_answer.strip()
 
-    weak_claims = [
-        claim for claim in claims
-        if claim.get("support_level") == "none"
-        or claim.get("contradiction_status") == "contradicted"
-        or len(claim.get("supporting_record_ids", [])) < 2
-    ]
+    parsed = _parse_json_object(raw_answer)
+    payload = _validate_synthesis_payload(parsed, question, records, evidence_status_hint=str(sufficiency.get("state") or "limited").strip().lower())
+    if payload is None:
+        payload = _build_safe_structured_fallback(question, records, sufficiency, pending_count)
 
-    if weak_claims:
-        weak_summary = "; ".join(claim.get("claim_text", "")[:120] for claim in weak_claims[:5])
-        rewrite_prompt = (
-            prompt
-            + "\n\nRe-write the answer by removing or softening unsupported claims. "
-            + "Unsupported claims detected: "
-            + weak_summary
-            + ". Ensure each major claim has at least 2 supporting record IDs."
-        )
-        completion_retry = client.chat.completions.create(
-            model=ASK_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a strict evidence-grounded analyst.",
-                },
-                {
-                    "role": "user",
-                    "content": rewrite_prompt,
-                },
-            ],
-            temperature=0,
-        )
-        answer = (completion_retry.choices[0].message.content if completion_retry.choices else answer) or answer
-        answer = answer.strip()
-        claims = _validate_claims_with_model(question, answer, records)
-
-    return answer, claims
+    return payload, []
 
 
 def _count_failed_records():
@@ -977,14 +1178,20 @@ def ask():
         failed_count = _count_failed_records()
 
         try:
-            answer, claim_checks = _generate_research_answer(
+            answer_payload, claim_checks = _generate_research_answer(
                 question,
                 top_records,
                 retrieval_result.sufficiency,
                 classified_total,
                 pending_count,
             )
-            if not isinstance(answer, str):
+            if isinstance(answer_payload, dict):
+                answer_data = answer_payload
+                answer_text = answer_payload.get("direct_answer") or ""
+            elif isinstance(answer_payload, str):
+                answer_data = _build_empty_answer_data(question, top_records, evidence_status="limited")
+                answer_text = answer_payload
+            else:
                 raise AskWorkflowError(
                     status_code=503,
                     error_code="malformed_response",
@@ -1020,6 +1227,7 @@ def ask():
                     corpus_status=corpus_status,
                     retrieval_failed=False,
                     debug_payload=debug_payload,
+                    answer_data=_build_empty_answer_data(question, evidence_rows, evidence_status="limited"),
                 )
                 return jsonify(response_payload), llm_exc.status_code
 
@@ -1042,6 +1250,7 @@ def ask():
                     corpus_status=corpus_status,
                     retrieval_failed=False,
                     debug_payload=debug_payload,
+                    answer_data=_build_empty_answer_data(question, evidence_rows, evidence_status="limited"),
                 )
                 return jsonify(response_payload), 429
 
@@ -1063,6 +1272,7 @@ def ask():
                     corpus_status=corpus_status,
                     retrieval_failed=False,
                     debug_payload=debug_payload,
+                    answer_data=_build_empty_answer_data(question, evidence_rows, evidence_status="limited"),
                 )
                 return jsonify(response_payload), 408
 
@@ -1084,6 +1294,7 @@ def ask():
                     corpus_status=corpus_status,
                     retrieval_failed=False,
                     debug_payload=debug_payload,
+                    answer_data=_build_empty_answer_data(question, evidence_rows, evidence_status="limited"),
                 )
                 return jsonify(response_payload), 503
 
@@ -1104,24 +1315,33 @@ def ask():
                 corpus_status=corpus_status,
                 retrieval_failed=False,
                 debug_payload=debug_payload,
+                answer_data=_build_empty_answer_data(question, evidence_rows, evidence_status="limited"),
             )
             return jsonify(response_payload), 500
 
-        confidence_level = "LOW"
-        if retrieval_result.sufficiency.get("state") == "sufficient":
-            confidence_level = "HIGH"
-        elif retrieval_result.sufficiency.get("state") == "limited":
-            confidence_level = "MEDIUM"
+        confidence_level = _normalize_confidence_label(
+            "LOW",
+            support_count=max(0, len(top_records)),
+            eligible_count=max(0, len(top_records)),
+            classification_coverage_incomplete=pending_count > 0,
+            evidence_indirect=retrieval_result.sufficiency.get("state") == "limited",
+            keyword_fallback=False,
+            contradiction_present=bool(answer_data.get("contradictory_evidence", {}).get("present", False)),
+            source_count=max(1, len({str(record.get("app") or record.get("source") or "") for record in top_records if isinstance(record, dict)})),
+        ).upper()
 
         provisional = pending_count > 0
         if provisional:
-            answer += "\n\nData status: provisional (classification is incomplete)."
+            if not answer_data.get("data_limitations"):
+                answer_data["data_limitations"] = f"Provisional result: {pending_count} of {total_raw_reviews} records are still pending classification."
+            else:
+                answer_data["data_limitations"] = answer_data["data_limitations"] + f" Provisional result: {pending_count} of {total_raw_reviews} records are still pending classification."
 
         response_payload = _structured_ask_response(
             status="success",
             question=question,
             message="OK",
-            answer=answer,
+            answer=answer_text,
             sources_used=records_used,
             records_searched=total_retrieved_count,
             evidence=evidence_rows,
@@ -1141,6 +1361,7 @@ def ask():
             claim_validation=claim_checks,
             retrieval_failed=False,
             debug_payload=build_debug_payload(retrieval_result) if debug_requested else None,
+            answer_data=answer_data,
         )
         return jsonify(response_payload)
     except Exception as exc:

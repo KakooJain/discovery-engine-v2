@@ -44,12 +44,33 @@ def post_question(client, question="test question"):
 
 
 def test_success_response(client, monkeypatch):
-    monkeypatch.setattr(app_module, "_generate_research_answer", lambda *args, **kwargs: ("Answer", [{"claim_text": "x"}]))
+    structured_answer = {
+        "question": "test question",
+        "direct_answer": "Users rely on known-item cues when they can.",
+        "insights": [
+            {
+                "title": "Users rely on direct search",
+                "observation": "The evidence points to direct search behaviour.",
+                "why_it_matters": "This limits accidental discovery.",
+                "evidence_count": 1,
+                "eligible_record_count": 1,
+                "supporting_record_ids": [1],
+                "evidence_excerpts": [{"text": "hard to trust", "source": "Blinkit"}],
+                "product_opportunity": "Make discovery more visible.",
+                "confidence": "low",
+            }
+        ],
+        "contradictory_evidence": {"present": False, "summary": "No meaningful contradictory evidence found in the retrieved sample.", "record_count": 0},
+        "evidence_status": "limited",
+        "data_limitations": "Provisional result: 10 of 20 records classified.",
+    }
+    monkeypatch.setattr(app_module, "_generate_research_answer", lambda *args, **kwargs: (structured_answer, [{"claim_text": "x"}]))
     response = post_question(client)
     assert response.status_code == 200
     body = response.get_json()
     assert body["status"] == "success"
-    assert body["answer"] == "Answer\n\nData status: provisional (classification is incomplete)."
+    assert body["answer"] == structured_answer["direct_answer"]
+    assert body["answer_data"] == structured_answer
     assert body["sources_used"] == 1
     assert body["records_searched"] == 1
 
@@ -62,6 +83,7 @@ def test_quota_exceeded_returns_limited(client, monkeypatch):
     assert body["status"] == "limited"
     assert body["error_code"] == "llm_quota_exceeded"
     assert "Synthesis temporarily unavailable" in body["answer"]
+    assert body["answer_data"]["evidence_status"] == "limited"
     assert body["sources_used"] == 1
     assert len(body["evidence"]) == 1
 
