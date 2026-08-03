@@ -115,6 +115,8 @@ SYSTEM_PROMPT = (
     "- Quotes must be copied exactly from the evidence, including Hinglish. Trim to the most telling fragment.\n"
     "- If fewer than five distinct reviews in the retrieved set genuinely support an insight, give only the ones that do and state the actual number. Never invent, pad, reuse the same quote twice, or stretch an unrelated quote to fit.\n"
     "- Each quote must independently support the specific claim in that insight's headline; do not include a quote merely because it appears in the retrieved set. Two or three strongly relevant quotes are better than five loosely related ones. Never reuse a quote across insights. If a quote is about a different topic than the headline claims, exclude it.\n"
+    "- Quote cap by evidence size: if RETRIEVED_SET_SIZE is fewer than 10, include at most 2 quotes per insight; if fewer than 20, include at most 3; otherwise up to 5. Prefer fewer strong quotes over filling slots.\n"
+    "- Quote uniqueness is mandatory: a quote may appear under only one insight in the entire answer. Do not repeat or lightly rephrase the same quote under multiple insights.\n"
     "- If the evidence does not support an insight, say so plainly rather than stretching unrelated complaints (e.g. pricing or delivery) into discovery conclusions.\n"
     "- If evidence genuinely doesn't support three distinct insights, give fewer.\n"
     "- Any statement about how common a pattern is MUST use CLASSIFIED CORPUS count and percentage together (for example, '412 of 2,961, 13.9%').\n"
@@ -280,8 +282,16 @@ def _build_stats_block(reviews):
     return "\n".join(lines)
 
 
-def _build_evidence_payload(question, reviews):
-    lines = [f"Question: {question}", _build_stats_block(reviews), "Evidence:"]
+def _build_evidence_payload(question, reviews, retrieved_set_size=None):
+    if retrieved_set_size is None:
+        retrieved_set_size = len(reviews)
+
+    lines = [
+        f"Question: {question}",
+        f"RETRIEVED_SET_SIZE={retrieved_set_size}",
+        _build_stats_block(reviews),
+        "Evidence:",
+    ]
     for index, review in enumerate(reviews, start=1):
         text = review.get("text", "").replace("\n", " ").strip()
         source = review.get("app", "unknown")
@@ -299,12 +309,12 @@ def _build_evidence_payload(question, reviews):
     return "\n".join(lines)
 
 
-def _ask_groq(question, reviews):
-    return _ask_groq_with_extra_rule(question, reviews, "")
+def _ask_groq(question, reviews, retrieved_set_size):
+    return _ask_groq_with_extra_rule(question, reviews, "", retrieved_set_size)
 
 
-def _ask_groq_with_extra_rule(question, reviews, extra_rule):
-    user_payload = _build_evidence_payload(question, reviews)
+def _ask_groq_with_extra_rule(question, reviews, extra_rule, retrieved_set_size):
+    user_payload = _build_evidence_payload(question, reviews, retrieved_set_size)
     if extra_rule:
         user_payload = user_payload + "\n\nValidator correction: " + extra_rule
 
@@ -600,11 +610,16 @@ def ask():
         else:
             confidence_level = "LOW"
 
-        answer = _ask_groq(question, selected_reviews)
+        answer = _ask_groq(question, selected_reviews, total_retrieved_count)
         violations = _validate_generated_answer(answer)
         if violations:
             retry_rule = _format_validator_retry_rule(violations)
-            answer_retry = _ask_groq_with_extra_rule(question, selected_reviews, retry_rule)
+            answer_retry = _ask_groq_with_extra_rule(
+                question,
+                selected_reviews,
+                retry_rule,
+                total_retrieved_count,
+            )
             retry_violations = _validate_generated_answer(answer_retry)
             if retry_violations:
                 answer = (
