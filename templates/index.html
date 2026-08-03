@@ -903,6 +903,17 @@
 
       <div id="statsGrid" class="stats-grid"></div>
 
+      <section class="section-card" aria-labelledby="painPointsTitle">
+        <h3 id="painPointsTitle" class="section-title">Top pain points affecting cross-category discovery</h3>
+        <p id="painPointsNote" class="heatmap-note"></p>
+        <article id="painPointsPanel" class="panel-card"></article>
+      </section>
+
+      <section class="section-card" aria-labelledby="userNeedsTitle">
+        <h3 id="userNeedsTitle" class="section-title">Top user needs</h3>
+        <article id="userNeedsPanel" class="panel-card"></article>
+      </section>
+
       <section class="section-card" aria-labelledby="sourceSplitTitle">
         <h3 id="sourceSplitTitle" class="section-title">Source Split</h3>
         <div id="sourceSplitBar" class="source-bar" role="img" aria-label="Play Store and App Store share"></div>
@@ -998,6 +1009,9 @@
       var answerFallback = document.getElementById("answerFallback");
       var dashStatus = document.getElementById("dashStatus");
       var statsGrid = document.getElementById("statsGrid");
+      var painPointsNote = document.getElementById("painPointsNote");
+      var painPointsPanel = document.getElementById("painPointsPanel");
+      var userNeedsPanel = document.getElementById("userNeedsPanel");
       var sourceSplitBar = document.getElementById("sourceSplitBar");
       var sourceSplitLegend = document.getElementById("sourceSplitLegend");
       var sentimentGrid = document.getElementById("sentimentGrid");
@@ -1311,12 +1325,109 @@
 
         statsGrid.innerHTML = [
           statCard("Total Reviews", humanize(totalReviews)),
-          statCard("Classified sample", classifiedValue, classifiedExtra),
           statCard("Play Store", humanize(valueOrDefault(stats.play_store_count, 0))),
           statCard("App Store", humanize(valueOrDefault(stats.app_store_count, 0))),
-          statCard("Average Rating", String(valueOrDefault(stats.average_rating, "N/A"))),
-          statCard("Average Sentiment", String(valueOrDefault(stats.average_sentiment, "N/A")))
+          statCard("Classified sample", classifiedValue, classifiedExtra)
         ].join("");
+      }
+
+      function humanizeTag(tag) {
+        return String(tag || "")
+          .split("-")
+          .filter(Boolean)
+          .map(function (part) {
+            return part.charAt(0).toUpperCase() + part.slice(1);
+          })
+          .join(" ");
+      }
+
+      function sortPanelItems(items) {
+        return (Array.isArray(items) ? items.slice() : []).sort(function (left, right) {
+          return (Number(valueOrDefault(right.count, 0)) || 0) - (Number(valueOrDefault(left.count, 0)) || 0);
+        });
+      }
+
+      function renderDiscoveryPainPoints(panelData, stats) {
+        var allowedBarrierTags = {
+          "trust-deficit-new-category": true,
+          "discovery-friction": true,
+          "info-gap": true,
+          "risk-aversion": true
+        };
+        var allowedFrustrationTags = {
+          "stockout-availability": true,
+          "return-refund": true,
+          "quality-freshness": true
+        };
+
+        var combined = [];
+
+        sortPanelItems(getNested(panelData, ["discovery_barrier", "items"], [])).forEach(function (item) {
+          if (allowedBarrierTags[item.label]) {
+            combined.push({
+              field: "discovery_barrier",
+              label: item.label,
+              count: Number(valueOrDefault(item.count, 0)) || 0,
+              percentage: Number(valueOrDefault(item.percentage, 0)) || 0
+            });
+          }
+        });
+
+        sortPanelItems(getNested(panelData, ["frustration_type", "items"], [])).forEach(function (item) {
+          if (allowedFrustrationTags[item.label]) {
+            combined.push({
+              field: "frustration_type",
+              label: item.label,
+              count: Number(valueOrDefault(item.count, 0)) || 0,
+              percentage: Number(valueOrDefault(item.percentage, 0)) || 0
+            });
+          }
+        });
+
+        var topFive = combined.sort(function (left, right) {
+          return right.count - left.count;
+        }).slice(0, 5);
+
+        var classifiedSoFar = Number(valueOrDefault(stats.classified_so_far, 0)) || 0;
+        painPointsNote.textContent = "Combines discovery_barrier tags with fulfilment frustrations that affect willingness to try an unfamiliar category. Counts are of the " + humanize(classifiedSoFar) + " classified reviews.";
+
+        if (!topFive.length) {
+          painPointsPanel.innerHTML = '<div class="empty-state">No matching discovery pain-point tags were found in the classified corpus.</div>';
+          return;
+        }
+
+        painPointsPanel.innerHTML = '<h4>Ranked signals</h4>' + topFive.map(function (item, index) {
+          var width = Math.max(0, Math.min(100, item.percentage));
+          return '<div class="tag-row">'
+            + '<div class="tag-head">'
+            + '<span>' + escapeHtml(String(index + 1) + '. ' + humanizeTag(item.label)) + '</span>'
+            + '<span>' + humanize(item.count) + ' (' + escapeHtml(item.percentage.toFixed(1).replace(/\.0$/, "")) + '%)</span>'
+            + '</div>'
+            + '<div class="tag-track"><div class="tag-fill" style="width:' + width + '%"></div></div>'
+            + '</div>';
+        }).join("");
+      }
+
+      function renderTopUserNeeds(panelData) {
+        var items = sortPanelItems(getNested(panelData, ["unmet_need", "items"], []));
+
+        if (!items.length) {
+          userNeedsPanel.innerHTML = '<div class="empty-state">No unmet-need tags were found in the classified corpus.</div>';
+          return;
+        }
+
+        userNeedsPanel.innerHTML = '<h4>Ranked needs</h4>' + items.map(function (item, index) {
+          var count = Number(valueOrDefault(item.count, 0)) || 0;
+          var percentage = Number(valueOrDefault(item.percentage, 0)) || 0;
+          var width = Math.max(0, Math.min(100, percentage));
+          return '<div class="tag-row">'
+            + '<div class="tag-head">'
+            + '<span>' + escapeHtml(String(index + 1) + '. ' + humanizeTag(item.label)) + '</span>'
+            + '<span>' + humanize(count) + ' (' + escapeHtml(percentage.toFixed(1).replace(/\.0$/, "")) + '%) <span class="chip">' + escapeHtml(item.label) + '</span></span>'
+            + '</div>'
+            + '<div class="tag-track"><div class="tag-fill" style="width:' + width + '%"></div></div>'
+            + '</div>';
+        }).join("");
       }
 
       function renderSourceSplit(split) {
@@ -1490,6 +1601,8 @@
               return;
             }
             renderHeaderStats(result.data.header_stats || {});
+            renderDiscoveryPainPoints(result.data.tag_panels || {}, result.data.header_stats || {});
+            renderTopUserNeeds(result.data.tag_panels || {});
             renderSourceSplit(result.data.source_split || {});
             renderSentiment(result.data.sentiment_distribution || {});
             renderTagPanels(result.data.tag_panels || {});
