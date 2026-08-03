@@ -61,7 +61,7 @@ def test_quota_exceeded_returns_limited(client, monkeypatch):
     body = response.get_json()
     assert body["status"] == "limited"
     assert body["error_code"] == "llm_quota_exceeded"
-    assert body["answer"] is None
+    assert "Synthesis temporarily unavailable" in body["answer"]
     assert body["sources_used"] == 1
     assert len(body["evidence"]) == 1
 

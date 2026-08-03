@@ -124,6 +124,92 @@ def _to_evidence_rows(records):
         )
     return evidence_rows
 
+
+def _build_limited_top_themes(evidence_rows):
+    theme_rules = [
+        (
+            "Search and known-item purchase",
+            ["search", "showing", "find", "reorder", "same", "known", "repeat"],
+        ),
+        (
+            "Trust and authenticity concerns",
+            ["trust", "authentic", "fake", "risky", "quality", "genuine"],
+        ),
+        (
+            "Lack of detailed product information",
+            ["detail", "information", "description", "ingredient", "review", "photo"],
+        ),
+        (
+            "Price and value uncertainty",
+            ["price", "expensive", "discount", "value", "cost"],
+        ),
+        (
+            "Assortment and availability gaps",
+            ["missing", "not available", "stock", "variety", "option"],
+        ),
+    ]
+
+    counts = {label: 0 for label, _ in theme_rules}
+    for row in evidence_rows:
+        text = str(row.get("text", "") or "").lower()
+        quote = str(row.get("supporting_quote", "") or "").lower()
+        combined = f"{text} {quote}"
+        for label, cues in theme_rules:
+            if any(cue in combined for cue in cues):
+                counts[label] += 1
+
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    selected = [label for label, count in ranked if count > 0][:3]
+    if selected:
+        return selected
+
+    return [
+        "Search and known-item purchase",
+        "Trust and authenticity concerns",
+        "Lack of detailed product information",
+    ]
+
+
+def _build_limited_supporting_excerpts(evidence_rows, max_items=3):
+    excerpts = []
+    for row in evidence_rows:
+        quote = str(row.get("supporting_quote", "") or "").strip()
+        text = str(row.get("text", "") or "").strip().replace("\n", " ")
+        excerpt = quote or text
+        if not excerpt:
+            continue
+        excerpt = excerpt[:160].strip()
+        if excerpt in excerpts:
+            continue
+        excerpts.append(excerpt)
+        if len(excerpts) >= max_items:
+            break
+    return excerpts
+
+
+def _build_limited_answer(evidence_rows):
+    relevant_count = len(evidence_rows)
+    themes = _build_limited_top_themes(evidence_rows)
+    excerpts = _build_limited_supporting_excerpts(evidence_rows, max_items=3)
+
+    lines = []
+    lines.append("Synthesis temporarily unavailable")
+    lines.append("")
+    lines.append(f"{relevant_count} relevant records retrieved")
+    lines.append("")
+    lines.append("Top matching themes:")
+    for theme in themes:
+        lines.append(f"• {theme}")
+    lines.append("")
+    lines.append("Supporting evidence:")
+    if excerpts:
+        for excerpt in excerpts:
+            lines.append(f"[{excerpt}]")
+    else:
+        lines.append("[Review excerpt]")
+
+    return "\n".join(lines)
+
 TAG_FIELD_MAP = {
     "behavioral_driver": {
         "habit-routine",
@@ -938,11 +1024,12 @@ def ask():
                 return jsonify(response_payload), llm_exc.status_code
 
             if _is_quota_or_rate_limit_error(llm_exc):
+                limited_answer = _build_limited_answer(evidence_rows)
                 response_payload = _structured_ask_response(
                     status="limited",
                     question=question,
                     message="The language-model quota has been reached. Retrieved evidence is shown below, but synthesis is temporarily unavailable.",
-                    answer=None,
+                    answer=limited_answer,
                     sources_used=records_used,
                     records_searched=total_retrieved_count,
                     evidence=evidence_rows,

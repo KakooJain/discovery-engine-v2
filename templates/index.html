@@ -1383,7 +1383,11 @@
             }
 
             if (status === "limited") {
+              var limitedSummary = data.answer
+                ? '<div class="insight-body" style="white-space:pre-line">' + escapeHtml(data.answer) + '</div>'
+                : '';
               answerBox.innerHTML = '<div class="notice-card">' + escapeHtml(data.message || "The language-model quota has been reached. Retrieved evidence is shown below, but synthesis is temporarily unavailable.") + '</div>'
+                + limitedSummary
                 + renderEvidenceCards(data.evidence || []);
               answerMeta.textContent = "Records searched: " + humanize(valueOrDefault(data.records_searched, 0)) + " | Sources used: " + humanize(valueOrDefault(data.sources_used, 0));
               answerMeta.style.display = "block";
