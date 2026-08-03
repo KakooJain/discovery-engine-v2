@@ -180,6 +180,8 @@
     .ask-wrap {
       max-width: 920px;
       margin: 0 auto;
+      display: grid;
+      gap: 12px;
     }
 
     .ask-heading {
@@ -198,7 +200,16 @@
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      margin-top: 18px;
+      margin-top: 6px;
+    }
+
+    .chips-shell {
+      display: grid;
+      gap: 6px;
+    }
+
+    .chips-toggle {
+      justify-self: start;
     }
 
     .chip {
@@ -220,9 +231,43 @@
 
     .ask-row {
       display: grid;
-      grid-template-columns: 1fr auto;
+      grid-template-columns: 1fr auto auto;
       gap: 10px;
-      margin-top: 16px;
+    }
+
+    .ask-thread {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 16px;
+      min-height: 210px;
+      max-height: calc(100vh - 360px);
+      overflow-y: auto;
+      display: grid;
+      gap: 12px;
+      scroll-behavior: smooth;
+    }
+
+    .chat-turn {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 12px;
+    }
+
+    .chat-question {
+      margin: 0;
+      color: var(--text-strong);
+      line-height: 1.55;
+    }
+
+    .ask-composer {
+      position: sticky;
+      bottom: 0;
+      z-index: 5;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 12px;
+      display: grid;
+      gap: 8px;
     }
 
     .ask-input {
@@ -828,17 +873,24 @@
         <h2 class="ask-heading">Ask a focused research question</h2>
         <p class="ask-sub">The system routes through taxonomy tags, retrieves evidence, and generates auditable insights.</p>
 
-        <div id="chips" class="chips" aria-label="Suggested questions"></div>
-
-        <div class="ask-row">
-          <label for="questionInput" class="sr-only">Ask question input</label>
-          <input id="questionInput" class="ask-input" type="text" placeholder="What prevents users from exploring new categories?" />
-          <button id="askButton" class="ask-button" type="button">Ask</button>
-        </div>
-
-        <div class="answer-wrap" id="answerBox">
+        <div class="ask-thread" id="answerBox">
           <p class="answer-empty">Enter a question and press Ask.</p>
         </div>
+
+        <div class="ask-composer">
+          <div class="chips-shell">
+            <button id="chipsToggle" class="tab-btn chips-toggle" type="button">Suggested questions</button>
+            <div id="chips" class="chips" aria-label="Suggested questions"></div>
+          </div>
+
+          <div class="ask-row">
+            <label for="questionInput" class="sr-only">Ask question input</label>
+            <input id="questionInput" class="ask-input" type="text" placeholder="What prevents users from exploring new categories?" />
+            <button id="askButton" class="ask-button" type="button">Ask</button>
+            <button id="clearThreadButton" class="tab-btn" type="button">Clear thread</button>
+          </div>
+        </div>
+
         <div class="ask-meta">
           <div id="answerMeta">Sources used: 0</div>
           <div id="answerFallback"></div>
@@ -943,8 +995,10 @@
       };
 
       var chips = document.getElementById("chips");
+      var chipsToggle = document.getElementById("chipsToggle");
       var questionInput = document.getElementById("questionInput");
       var askButton = document.getElementById("askButton");
+      var clearThreadButton = document.getElementById("clearThreadButton");
       var answerBox = document.getElementById("answerBox");
       var answerMeta = document.getElementById("answerMeta");
       var answerFallback = document.getElementById("answerFallback");
@@ -968,6 +1022,10 @@
       var dashboardLoaded = false;
       var dashboardTimer = null;
       var askLoadingTimer = null;
+      var askLoadingNode = null;
+      var askThread = [];
+      var chipsExpanded = true;
+      var ASK_THREAD_STORAGE_KEY = "dreAskThreadV1";
 
       function escapeHtml(text) {
         return String(text)
@@ -1007,17 +1065,48 @@
         });
       }
 
+      function persistAskThread() {
+        try {
+          localStorage.setItem(ASK_THREAD_STORAGE_KEY, JSON.stringify(askThread));
+        } catch (error) {
+          // Ignore storage failures to keep chat usable.
+        }
+      }
+
+      function loadAskThread() {
+        try {
+          var raw = localStorage.getItem(ASK_THREAD_STORAGE_KEY);
+          var parsed = raw ? JSON.parse(raw) : [];
+          askThread = Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+          askThread = [];
+        }
+      }
+
+      function updateChipsVisibility() {
+        chips.style.display = chipsExpanded ? "flex" : "none";
+        chipsToggle.textContent = chipsExpanded ? "Hide suggested questions" : "Suggested questions";
+      }
+
       function startAskLoadingStages() {
+        stopAskLoadingStages();
         var stages = [
           "Routing question to taxonomy...",
           "Retrieving evidence...",
           "Synthesising insights..."
         ];
         var stageIndex = 0;
-        answerBox.innerHTML = '<div class="loader-stage"><span class="loader-dot"></span><span>' + escapeHtml(stages[stageIndex]) + '</span></div>';
+        askLoadingNode = document.createElement("div");
+        askLoadingNode.className = "loader-stage";
+        askLoadingNode.innerHTML = '<span class="loader-dot"></span><span>' + escapeHtml(stages[stageIndex]) + '</span>';
+        answerBox.appendChild(askLoadingNode);
+        answerBox.scrollTop = answerBox.scrollHeight;
         askLoadingTimer = setInterval(function () {
           stageIndex = Math.min(stages.length - 1, stageIndex + 1);
-          answerBox.innerHTML = '<div class="loader-stage"><span class="loader-dot"></span><span>' + escapeHtml(stages[stageIndex]) + '</span></div>';
+          if (askLoadingNode) {
+            askLoadingNode.innerHTML = '<span class="loader-dot"></span><span>' + escapeHtml(stages[stageIndex]) + '</span>';
+            answerBox.scrollTop = answerBox.scrollHeight;
+          }
         }, 700);
       }
 
@@ -1026,6 +1115,10 @@
           clearInterval(askLoadingTimer);
           askLoadingTimer = null;
         }
+        if (askLoadingNode && askLoadingNode.parentNode) {
+          askLoadingNode.parentNode.removeChild(askLoadingNode);
+        }
+        askLoadingNode = null;
       }
 
       function parseAnswerSections(answerText) {
@@ -1162,7 +1255,39 @@
         html += '<div class="ask-note">HIGH = 20+ tag-matched reviews. MEDIUM = 8-19. LOW = under 8, or keyword fallback used.</div>';
         html += '<div class="ask-note">' + escapeHtml(evidenceLine) + '</div>';
 
+        return html;
+      }
+
+      function renderAskThread() {
+        if (!askThread.length) {
+          answerBox.innerHTML = '<p class="answer-empty">Enter a question and press Ask.</p>';
+          return;
+        }
+
+        var html = askThread.map(function (entry) {
+          return '<article class="chat-turn">'
+            + '<div class="stat-label">Question</div>'
+            + '<p class="chat-question">' + escapeHtml(entry.question || "") + '</p>'
+            + renderAnswer(entry.answer || "", entry.selected_tag_filters || [], {
+              confidence_level: entry.confidence_level,
+              tag_matched_count: entry.tag_matched_count,
+              total_retrieved_count: entry.total_retrieved_count,
+              fallback_used: entry.fallback_used
+            })
+            + '</article>';
+        }).join("");
+
         answerBox.innerHTML = html;
+      }
+
+      function appendAskTurn(entry) {
+        askThread.push(entry);
+        persistAskThread();
+        renderAskThread();
+        var turns = answerBox.querySelectorAll(".chat-turn");
+        if (turns.length) {
+          turns[turns.length - 1].scrollIntoView({ behavior: "smooth", block: "end" });
+        }
       }
 
       function valueOrDefault(value, fallback) {
@@ -1423,7 +1548,9 @@
       function askQuestion() {
         var question = questionInput.value.trim();
         if (!question) {
-          answerBox.innerHTML = '<p class="answer-empty">Please type a question first.</p>';
+          if (!askThread.length) {
+            answerBox.innerHTML = '<p class="answer-empty">Please type a question first.</p>';
+          }
           answerMeta.textContent = "Sources used: 0";
           answerMeta.style.display = "block";
           answerFallback.textContent = "";
@@ -1456,7 +1583,10 @@
               return;
             }
 
-            renderAnswer(result.data.answer || "", result.data.selected_tag_filters || [], {
+            appendAskTurn({
+              question: question,
+              answer: result.data.answer || "",
+              selected_tag_filters: result.data.selected_tag_filters || [],
               confidence_level: result.data.confidence_level,
               tag_matched_count: result.data.tag_matched_count,
               total_retrieved_count: result.data.total_retrieved_count,
@@ -1465,6 +1595,9 @@
             answerMeta.textContent = "Sources used: " + humanize(valueOrDefault(result.data.sources_used, 0));
             answerMeta.style.display = "block";
             answerFallback.textContent = "";
+            questionInput.value = "";
+            chipsExpanded = false;
+            updateChipsVisibility();
           })
           .catch(function (error) {
             answerBox.innerHTML = '<div class="notice-card">Couldn\'t reach the language model. Please try again in a moment.</div>';
@@ -1486,6 +1619,20 @@
       });
 
       askButton.addEventListener("click", askQuestion);
+      clearThreadButton.addEventListener("click", function () {
+        askThread = [];
+        persistAskThread();
+        renderAskThread();
+        answerMeta.textContent = "Sources used: 0";
+        answerMeta.style.display = "block";
+        answerFallback.textContent = "";
+        chipsExpanded = true;
+        updateChipsVisibility();
+      });
+      chipsToggle.addEventListener("click", function () {
+        chipsExpanded = !chipsExpanded;
+        updateChipsVisibility();
+      });
       questionInput.addEventListener("keydown", function (event) {
         if (event.key === "Enter") {
           askQuestion();
@@ -1525,6 +1672,10 @@
       });
 
       renderChips();
+      loadAskThread();
+      chipsExpanded = askThread.length === 0;
+      updateChipsVisibility();
+      renderAskThread();
       applyTheme();
     })();
   </script>
