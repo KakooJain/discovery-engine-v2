@@ -1046,7 +1046,7 @@
           }
 
           var lines = body.split("\n");
-          var quote = "";
+          var quotes = [];
           var soWhat = "";
           var keptLines = [];
 
@@ -1057,8 +1057,8 @@
               continue;
             }
 
-            if (line.indexOf(">") === 0 && !quote) {
-              quote = line.slice(1).trim().replace(/^"|"$/g, "");
+            if (line.indexOf(">") === 0) {
+              quotes.push(line.slice(1).trim().replace(/^"|"$/g, ""));
               continue;
             }
 
@@ -1079,7 +1079,7 @@
             number: number,
             title: title,
             body: keptLines.join("\n").trim(),
-            quote: quote,
+            quotes: quotes,
             soWhat: soWhat
           });
         }
@@ -1115,9 +1115,9 @@
             html += '<article class="insight-card">';
             html += '<h3 class="insight-title">Insight ' + escapeHtml(insight.number) + ': ' + escapeHtml(insight.title) + '</h3>';
             html += '<p class="insight-body">' + nlToBr(insight.body || "") + '</p>';
-            if (insight.quote) {
-              html += '<blockquote class="pull-quote">"' + escapeHtml(insight.quote) + '"</blockquote>';
-            }
+            (Array.isArray(insight.quotes) ? insight.quotes : []).forEach(function (quote) {
+              html += '<blockquote class="pull-quote">"' + escapeHtml(quote) + '"</blockquote>';
+            });
             if (insight.soWhat) {
               html += '<div class="so-what"><strong>So what:</strong> ' + escapeHtml(insight.soWhat) + '</div>';
             }
