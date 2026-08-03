@@ -102,9 +102,11 @@ SYSTEM_PROMPT = (
     "**Insight 1: [Short, specific, claim-style headline]**\n"
     "[2-3 sentences explaining the pattern. Reference how many reviews support it using the stats provided. Be concrete.]\n"
     "> \"[verbatim user quote]\"\n"
-    "**So what:** [One sentence — what Blinkit's product team should consider doing about it.]\n\n"
-    "**Insight 2: ...** [same structure]\n\n"
-    "**Insight 3: ...** [same structure]\n\n"
+    "> \"[verbatim user quote]\"\n"
+    "> \"[verbatim user quote]\"\n"
+    "[...up to five total, only as many as the evidence genuinely supports]\n\n"
+    "**Insight 2: ...** [headline, summary, up to five supporting quotes]\n\n"
+    "**Insight 3: ...** [headline, summary, up to five supporting quotes]\n\n"
     "**Confidence:** [One line: how strong is this evidence? Note if it rests on few reviews, or if app-store reviews likely under-represent this behaviour.]\n\n"
     "RULES:\n"
     "- NEVER write \"review 6\", \"review 10\", or any numeric review reference. Quote users verbatim instead.\n"
@@ -112,6 +114,7 @@ SYSTEM_PROMPT = (
     "- Use quantitative evidence, but do not use retrieved-set prevalence to claim how common behavior is in the overall user base.\n"
     "- Headlines must be claims, not topics. Write \"[A specific claim about user behaviour, not a topic label]\" not \"Habits and routines\".\n"
     "- Quotes must be copied exactly from the evidence, including Hinglish. Trim to the most telling fragment.\n"
+    "- If fewer than five distinct reviews in the retrieved set genuinely support an insight, give only the ones that do and state the actual number. Never invent, pad, reuse the same quote twice, or stretch an unrelated quote to fit.\n"
     "- If the evidence does not support an insight, say so plainly rather than stretching unrelated complaints (e.g. pricing or delivery) into discovery conclusions.\n"
     "- If evidence genuinely doesn't support three distinct insights, give fewer and say so in Confidence.\n"
     "- Any statement about how common a pattern is MUST use CLASSIFIED CORPUS count and percentage together (for example, '412 of 2,961, 13.9%').\n"
@@ -336,7 +339,9 @@ def _validate_generated_answer(answer):
 
     insight_sections = re.split(r"\*\*Insight\s+\d+:", answer)
     for section in insight_sections[1:]:
-        section_text = section.split("**So what:**")[0]
+        section_text = section.split("**Confidence:**")[0]
+        section_lines = [line for line in section_text.splitlines() if not line.lstrip().startswith(">")]
+        section_text = "\n".join(section_lines)
         counts = [(int(m.group(1)), int(m.group(2))) for m in re.finditer(r"\b(\d+)\s+of\s+(\d+)\b", section_text)]
         if counts and max(n for n, _ in counts) < 3:
             violations.append("An insight cites fewer than 3 supporting reviews.")
