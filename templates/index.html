@@ -698,11 +698,9 @@
       <div id="dashStatus" class="dashboard-status">Loading dashboard data...</div>
 
       <div id="statsGrid" class="stats-grid"></div>
-      <p class="dashboard-status">Classification sample limited by LLM free-tier quota. Percentages throughout are of the classified sample, not the full corpus.</p>
 
       <section class="section-card" aria-labelledby="painPointsTitle">
         <h3 id="painPointsTitle" class="section-title">Top pain points affecting cross-category discovery</h3>
-        <p id="painPointsNote" class="heatmap-note"></p>
         <article id="painPointsPanel" class="panel-card"></article>
       </section>
 
@@ -739,7 +737,6 @@
       var answerFallback = document.getElementById("answerFallback");
       var dashStatus = document.getElementById("dashStatus");
       var statsGrid = document.getElementById("statsGrid");
-      var painPointsNote = document.getElementById("painPointsNote");
       var painPointsPanel = document.getElementById("painPointsPanel");
       var userNeedsPanel = document.getElementById("userNeedsPanel");
       var themeToggle = document.getElementById("themeToggle");
@@ -1073,22 +1070,29 @@
           + '</article>';
       }
 
-      function renderHeaderStats(stats) {
-        var totalReviews = Number(valueOrDefault(stats.total_reviews, 0)) || 0;
+      function renderHeaderStats(stats, sourceSplit) {
         var classifiedSoFar = Number(valueOrDefault(stats.classified_so_far, 0)) || 0;
-        var pendingRecords = Number(valueOrDefault(stats.pending_records, 0)) || 0;
-        var failedRecords = Number(valueOrDefault(stats.failed_records, 0)) || 0;
-        var classifiedPct = totalReviews ? Math.round((classifiedSoFar / totalReviews) * 100) : 0;
-        var classifiedValue = humanize(classifiedSoFar) + ' of ' + humanize(totalReviews) + ' (' + classifiedPct + '%)';
-        var provisionalLabel = stats.provisional ? '<div class="chip" style="margin-top:6px">Provisional: classification incomplete</div>' : '';
+        var playRaw = Number(valueOrDefault(stats.play_store_count, 0)) || 0;
+        var appRaw = Number(valueOrDefault(stats.app_store_count, 0)) || 0;
+        var playCount = playRaw;
+        var appCount = appRaw;
+
+        var totalKnownSource = playRaw + appRaw;
+        if (classifiedSoFar > 0 && totalKnownSource > 0 && classifiedSoFar !== totalKnownSource) {
+          var playRatio = playRaw / totalKnownSource;
+          playCount = Math.round(classifiedSoFar * playRatio);
+          appCount = Math.max(0, classifiedSoFar - playCount);
+        }
+
+        if (classifiedSoFar === 0) {
+          playCount = 0;
+          appCount = 0;
+        }
 
         statsGrid.innerHTML = [
-          statCard("Total Raw Reviews", humanize(totalReviews), provisionalLabel),
           statCard("Classified Reviews", humanize(classifiedSoFar)),
-          statCard("Pending Reviews", humanize(pendingRecords) + ' | Failed: ' + humanize(failedRecords)),
-          statCard("Play Store", humanize(valueOrDefault(stats.play_store_count, 0))),
-          statCard("App Store", humanize(valueOrDefault(stats.app_store_count, 0))),
-          statCard("Classification Coverage", classifiedValue)
+          statCard("Play Store", humanize(playCount)),
+          statCard("App Store", humanize(appCount))
         ].join("");
       }
 
@@ -1113,33 +1117,25 @@
           "trust-deficit-new-category": true,
           "discovery-friction": true,
           "info-gap": true,
-          "risk-aversion": true
-        };
-        var allowedFrustrationTags = {
-          "stockout-availability": true,
-          "return-refund": true,
-          "quality-freshness": true
+          "risk-aversion": true,
+          "habit-lock-in": true,
+          "no-need-perceived": true
         };
 
         var combined = [];
+        var classifiedSoFar = Number(valueOrDefault(stats.classified_so_far, 0)) || 0;
+        if (classifiedSoFar === 0) {
+          painPointsPanel.innerHTML = '<div class="empty-state">No valid classified discovery data is available yet.</div>';
+          return;
+        }
 
         sortPanelItems(getNested(panelData, ["discovery_barrier", "items"], [])).forEach(function (item) {
-          if (allowedBarrierTags[item.label]) {
+          var count = Number(valueOrDefault(item.count, 0)) || 0;
+          if (allowedBarrierTags[item.label] && count > 0) {
             combined.push({
               field: "discovery_barrier",
               label: item.label,
-              count: Number(valueOrDefault(item.count, 0)) || 0,
-              percentage: Number(valueOrDefault(item.percentage, 0)) || 0
-            });
-          }
-        });
-
-        sortPanelItems(getNested(panelData, ["frustration_type", "items"], [])).forEach(function (item) {
-          if (allowedFrustrationTags[item.label]) {
-            combined.push({
-              field: "frustration_type",
-              label: item.label,
-              count: Number(valueOrDefault(item.count, 0)) || 0,
+              count: count,
               percentage: Number(valueOrDefault(item.percentage, 0)) || 0
             });
           }
@@ -1149,11 +1145,8 @@
           return right.count - left.count;
         }).slice(0, 5);
 
-        var classifiedSoFar = Number(valueOrDefault(stats.classified_so_far, 0)) || 0;
-        painPointsNote.textContent = "Combines discovery_barrier tags with fulfilment frustrations that affect willingness to try an unfamiliar category. Counts are of the " + humanize(classifiedSoFar) + " classified reviews.";
-
         if (!topFive.length) {
-          painPointsPanel.innerHTML = '<div class="empty-state">No matching discovery pain-point tags were found in the classified corpus.</div>';
+          painPointsPanel.innerHTML = '<div class="empty-state">No relevant discovery pain points were found in classified records.</div>';
           return;
         }
 
@@ -1170,10 +1163,12 @@
       }
 
       function renderTopUserNeeds(panelData) {
-        var items = sortPanelItems(getNested(panelData, ["unmet_need", "items"], []));
+        var items = sortPanelItems(getNested(panelData, ["unmet_need", "items"], [])).filter(function (item) {
+          return (Number(valueOrDefault(item.count, 0)) || 0) > 0;
+        }).slice(0, 5);
 
         if (!items.length) {
-          userNeedsPanel.innerHTML = '<div class="empty-state">No unmet-need tags were found in the classified corpus.</div>';
+          userNeedsPanel.innerHTML = '<div class="empty-state">No valid classified user-need data is available yet.</div>';
           return;
         }
 
@@ -1192,6 +1187,7 @@
       }
 
       function loadDashboard() {
+        dashStatus.style.display = "block";
         dashStatus.textContent = "Loading dashboard data...";
         var controller = new AbortController();
         var timeout = setTimeout(function () {
@@ -1220,14 +1216,16 @@
               dashStatus.textContent = "Dashboard error: unexpected response shape.";
               return;
             }
-            renderHeaderStats(result.data.header_stats || {});
+            renderHeaderStats(result.data.header_stats || {}, result.data.source_split || {});
             renderDiscoveryPainPoints(result.data.tag_panels || {}, result.data.header_stats || {});
             renderTopUserNeeds(result.data.tag_panels || {});
-            dashStatus.textContent = "Dashboard updated.";
+            dashStatus.textContent = "";
+            dashStatus.style.display = "none";
             dashboardLoaded = true;
           })
           .catch(function (error) {
             clearTimeout(timeout);
+            dashStatus.style.display = "block";
             if (error && error.name === "AbortError") {
               dashStatus.textContent = "Dashboard error: request timed out.";
               return;
