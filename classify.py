@@ -47,9 +47,9 @@ print(f"GEMMA_MODEL env raw: {_gemma_model_env or '<unset>'}")
 print(f"GEMINI_MODELS configured: {', '.join(GEMINI_MODELS)}")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-    raise RuntimeError("SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+    raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env")
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 active_gemini_model_index = 0
@@ -59,7 +59,7 @@ gemini_request_count = 0
 print(f"Gemini first request model (initial): {GEMINI_MODELS[active_gemini_model_index]}")
 
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 FAILED_IDS_PATH = Path(__file__).resolve().parent / "failed_ids.txt"
 SYSTEM_PROMPT_SUFFIX = "\n\nReturn ONLY valid JSON with exactly these keys: behavioral_driver, discovery_barrier, discovery_channel, frustration_type, segment_marker, unmet_need, categories, sentiment_score, supporting_quote. Use plain integers for sentiment_score, such as -2, -1, 0, 1, 2. Do not use plus signs or strings for sentiment_score."
 
