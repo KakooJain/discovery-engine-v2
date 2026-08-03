@@ -860,6 +860,8 @@
 
       <section class="section-card" aria-labelledby="sentimentTitle">
         <h3 id="sentimentTitle" class="section-title">Sentiment Distribution</h3>
+        <p class="heatmap-note">Each review was rated -2 to +2 by the classifier for expressed attitude toward Blinkit. Anchors include Hinglish terms, so non-English reviews were classified rather than dropped.</p>
+        <p class="heatmap-note">Angry (-2) - furious, scam, fraud; Dissatisfied (-1) - a complaint; Neutral (0) - neither clearly positive nor negative; Satisfied (+1) - works fine; Delighted (+2) - loves it.</p>
         <div id="sentimentGrid" class="sentiment-grid"></div>
       </section>
 
@@ -1188,15 +1190,15 @@
       }
 
       function renderHeaderStats(stats) {
-        var progress = Math.max(0, Math.min(100, Number(valueOrDefault(stats.progress_percentage, 0))));
-        var classifiedExtra = '<div class="progress-track" role="img" aria-label="Classification progress ' + progress + '%">'
-          + '<div class="progress-fill" style="width:' + progress + '%"></div>'
-          + '</div>'
-          + '<div class="dashboard-status">' + progress + '% complete</div>';
+        var totalReviews = Number(valueOrDefault(stats.total_reviews, 0)) || 0;
+        var classifiedSoFar = Number(valueOrDefault(stats.classified_so_far, 0)) || 0;
+        var classifiedPct = totalReviews ? Math.round((classifiedSoFar / totalReviews) * 100) : 0;
+        var classifiedValue = humanize(classifiedSoFar) + ' of ' + humanize(totalReviews) + ' (' + classifiedPct + '%)';
+        var classifiedExtra = '<div class="dashboard-status">Sampling capped by LLM free-tier quota - a documented limit, not an incomplete run.</div>';
 
         statsGrid.innerHTML = [
-          statCard("Total Reviews", humanize(valueOrDefault(stats.total_reviews, 0))),
-          statCard("Classified So Far", humanize(valueOrDefault(stats.classified_so_far, 0)), classifiedExtra),
+          statCard("Total Reviews", humanize(totalReviews)),
+          statCard("Classified sample", classifiedValue, classifiedExtra),
           statCard("Play Store", humanize(valueOrDefault(stats.play_store_count, 0))),
           statCard("App Store", humanize(valueOrDefault(stats.app_store_count, 0))),
           statCard("Average Rating", String(valueOrDefault(stats.average_rating, "N/A"))),
@@ -1219,11 +1221,20 @@
 
       function renderSentiment(data) {
         var segments = Array.isArray(data.segments) ? data.segments : [];
+        var sentimentLabels = {
+          "-2": "Angry",
+          "-1": "Dissatisfied",
+          "0": "Neutral / mixed",
+          "1": "Satisfied",
+          "2": "Delighted"
+        };
         var html = segments.map(function (segment) {
           var score = String(valueOrDefault(segment.score, 0));
           var cls = sentimentClassByScore[score] || "sentiment-scale-0";
+          var label = sentimentLabels[score] || "Neutral / mixed";
+          var scoreLabel = score === "1" || score === "2" ? "+" + score : score;
           return '<article class="sentiment-segment ' + cls + '">'
-            + '<div class="sentiment-score">Sentiment ' + escapeHtml(score) + '</div>'
+            + '<div class="sentiment-score">' + escapeHtml(label) + ' <span class="dashboard-status">(' + escapeHtml(scoreLabel) + ')</span></div>'
             + '<div>' + humanize(valueOrDefault(segment.count, 0)) + ' reviews</div>'
             + '<div>' + escapeHtml(valueOrDefault(segment.percentage, 0)) + '%</div>'
             + '</article>';
