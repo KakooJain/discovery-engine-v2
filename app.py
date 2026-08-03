@@ -23,7 +23,7 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 if not SUPABASE_URL or not SUPABASE_ANON_KEY:
     raise RuntimeError("SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env")
 
-client = Groq(api_key=GROQ_API_KEY)
+client = Groq(api_key=GROQ_API_KEY, max_retries=1)
 supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 app = Flask(__name__, template_folder="templates")
