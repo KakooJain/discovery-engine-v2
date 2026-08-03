@@ -1,9 +1,11 @@
+import csv
 import json
 import re
 from pathlib import Path
 
-RAW_DIR = Path("data/raw")
-OUTPUT_DIR = Path("data/clean")
+BASE_DIR = Path(__file__).resolve().parent
+RAW_DIR = BASE_DIR / "data" / "raw"
+OUTPUT_DIR = BASE_DIR / "data" / "clean"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 SOURCE_ALIASES = {
@@ -55,10 +57,25 @@ def normalize_record(record):
 
 
 def infer_source(file_path: Path, record: dict) -> str:
-    source = str(record.get("source") or "").strip()
+    source = str(record.get("source") or "").strip().lower()
+    if source in {"google play", "play store", "playstore", "play_store"}:
+        return "play_store"
+    if source in {"app store", "appstore", "app_store"}:
+        return "app_store"
+    if source in SOURCE_ALIASES:
+        return SOURCE_ALIASES[source]
     if source:
         return source
     return SOURCE_ALIASES.get(file_path.stem.lower(), file_path.stem.lower())
+
+
+def load_raw_records(file_path: Path):
+    if file_path.suffix.lower() == ".csv":
+        with file_path.open("r", encoding="utf-8", newline="") as handle:
+            return list(csv.DictReader(handle))
+
+    with file_path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 if __name__ == "__main__":
@@ -70,16 +87,15 @@ if __name__ == "__main__":
     low_word_count_dropped = 0
     duplicate_dropped = 0
 
-    raw_files = sorted(RAW_DIR.glob("*.json"))
+    raw_files = sorted(list(RAW_DIR.glob("*.json")) + list(RAW_DIR.glob("*.csv")))
     if not raw_files:
-        print(f"No raw JSON files found in {RAW_DIR}")
+        print(f"No raw data files found in {RAW_DIR}")
 
     for file_path in raw_files:
         try:
-            with file_path.open("r", encoding="utf-8") as handle:
-                raw_records = json.load(handle)
-        except json.JSONDecodeError as exc:
-            print(f"Skipping invalid JSON file {file_path.name}: {exc}")
+            raw_records = load_raw_records(file_path)
+        except (json.JSONDecodeError, csv.Error) as exc:
+            print(f"Skipping invalid data file {file_path.name}: {exc}")
             continue
 
         if not raw_records:

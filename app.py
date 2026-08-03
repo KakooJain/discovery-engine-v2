@@ -580,6 +580,12 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/health")
+@app.route("/healthz")
+def health_check():
+    return jsonify({"status": "ok"}), 200
+
+
 @app.route("/ask", methods=["POST"])
 def ask():
     payload = request.get_json(silent=True)

@@ -4,9 +4,11 @@ from pathlib import Path
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+BASE_DIR = Path(__file__).resolve().parent
+
 
 def retrieve(query, top_n=10):
-    data_path = Path("data/clean/reviews.json")
+    data_path = BASE_DIR / "data" / "clean" / "reviews.json"
     with data_path.open("r", encoding="utf-8") as handle:
         records = json.load(handle)
 
