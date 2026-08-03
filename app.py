@@ -107,7 +107,6 @@ SYSTEM_PROMPT = (
     "[...up to five total, only as many as the evidence genuinely supports]\n\n"
     "**Insight 2: ...** [headline, summary, up to five supporting quotes]\n\n"
     "**Insight 3: ...** [headline, summary, up to five supporting quotes]\n\n"
-    "**Confidence:** [One line: how strong is this evidence? Note if it rests on few reviews, or if app-store reviews likely under-represent this behaviour.]\n\n"
     "RULES:\n"
     "- NEVER write \"review 6\", \"review 10\", or any numeric review reference. Quote users verbatim instead.\n"
     "- Every insight must be grounded in the supplied evidence. Do not invent patterns.\n"
@@ -117,11 +116,10 @@ SYSTEM_PROMPT = (
     "- If fewer than five distinct reviews in the retrieved set genuinely support an insight, give only the ones that do and state the actual number. Never invent, pad, reuse the same quote twice, or stretch an unrelated quote to fit.\n"
     "- Each quote must independently support the specific claim in that insight's headline; do not include a quote merely because it appears in the retrieved set. Two or three strongly relevant quotes are better than five loosely related ones. Never reuse a quote across insights. If a quote is about a different topic than the headline claims, exclude it.\n"
     "- If the evidence does not support an insight, say so plainly rather than stretching unrelated complaints (e.g. pricing or delivery) into discovery conclusions.\n"
-    "- If evidence genuinely doesn't support three distinct insights, give fewer and say so in Confidence.\n"
+    "- If evidence genuinely doesn't support three distinct insights, give fewer.\n"
     "- Any statement about how common a pattern is MUST use CLASSIFIED CORPUS count and percentage together (for example, '412 of 2,961, 13.9%').\n"
     "- Retrieved-set counts are allowed only to describe quote evidence volume (for example, 'quotes below come from 6 retrieved reviews'); never use retrieved-set counts to claim prevalence.\n"
-    "- Do not present an insight supported by fewer than 3 reviews. If only one or two reviews touch a theme, mention it in Confidence as a weak signal instead.\n"
-    "- Confidence must be honest and specific. Under 20 retrieved reviews is LOW confidence. Say so plainly and state the number.\n"
+    "- Do not present an insight supported by fewer than 3 reviews.\n"
     "- No preamble. Start directly with Insight 1.\n"
     "---"
 )
@@ -340,24 +338,11 @@ def _validate_generated_answer(answer):
 
     insight_sections = re.split(r"\*\*Insight\s+\d+:", answer)
     for section in insight_sections[1:]:
-        section_text = section.split("**Confidence:**")[0]
+        section_text = section
         section_lines = [line for line in section_text.splitlines() if not line.lstrip().startswith(">")]
         section_text = "\n".join(section_lines)
         counts = [(int(m.group(1)), int(m.group(2))) for m in re.finditer(r"\b(\d+)\s+of\s+(\d+)\b", section_text)]
         if counts and max(n for n, _ in counts) < 3:
-            violations.append("An insight cites fewer than 3 supporting reviews.")
-
-        low_support_numeric = re.search(
-            r"\b([12])\s+(reviews?|users?)\b",
-            section_text,
-            flags=re.IGNORECASE,
-        )
-        low_support_words = re.search(
-            r"\b(one|two)\s+(review|reviews|user|users)\b",
-            section_text,
-            flags=re.IGNORECASE,
-        )
-        if low_support_numeric or low_support_words:
             violations.append("An insight cites fewer than 3 supporting reviews.")
 
     deduped = []
@@ -598,10 +583,22 @@ def ask():
     try:
         selections = pick_retrieval_targets(question)
         selected_reviews = retrieve_tagged_reviews(question, selections)
+        tag_matched_count = len(selected_reviews)
         evidence_limited = len(selected_reviews) < 3
+        fallback_used = evidence_limited
 
         if evidence_limited:
             selected_reviews = retrieve_fallback_reviews(question)
+
+        total_retrieved_count = len(selected_reviews)
+        if fallback_used:
+            confidence_level = "LOW"
+        elif tag_matched_count >= 20:
+            confidence_level = "HIGH"
+        elif tag_matched_count >= 8:
+            confidence_level = "MEDIUM"
+        else:
+            confidence_level = "LOW"
 
         answer = _ask_groq(question, selected_reviews)
         violations = _validate_generated_answer(answer)
@@ -625,9 +622,12 @@ def ask():
         return jsonify(
             {
                 "answer": answer,
-                "sources_used": len(selected_reviews),
+                "sources_used": total_retrieved_count,
                 "selected_tag_filters": selections,
-                "fallback_used": evidence_limited,
+                "fallback_used": fallback_used,
+                "tag_matched_count": tag_matched_count,
+                "total_retrieved_count": total_retrieved_count,
+                "confidence_level": confidence_level,
             }
         )
     except Exception as exc:

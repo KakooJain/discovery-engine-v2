@@ -1040,11 +1040,6 @@
           var title = headingChunk.slice(headingColon + 1).trim();
           var body = part.slice(boldEnd + 2).trim();
 
-          var confidenceMarker = body.indexOf("**Confidence:**");
-          if (confidenceMarker !== -1) {
-            body = body.slice(0, confidenceMarker).trim();
-          }
-
           var lines = body.split("\n");
           var quotes = [];
           var soWhat = "";
@@ -1084,12 +1079,7 @@
           });
         }
 
-        var confidenceText = "";
-        var confidenceSplit = text.split("**Confidence:**");
-        if (confidenceSplit.length > 1) {
-          confidenceText = String(confidenceSplit[1].split("\n")[0] || "").trim();
-        }
-        return { insights: insights, confidenceText: confidenceText };
+        return { insights: insights };
       }
 
       function renderSelectedFilters(filters) {
@@ -1104,9 +1094,23 @@
         return '<div class="selected-filters" aria-label="Selected tag filters">' + items + '</div>';
       }
 
-      function renderAnswer(answerText, selectedFilters) {
+      function renderAnswer(answerText, selectedFilters, metrics) {
         var parsed = parseAnswerSections(answerText);
         var html = renderSelectedFilters(selectedFilters);
+        var metricData = metrics || {};
+        var fallbackUsed = Boolean(metricData.fallback_used);
+        var tagMatchedCount = Number(metricData.tag_matched_count);
+        var totalRetrievedCount = Number(metricData.total_retrieved_count);
+        if (!Number.isFinite(tagMatchedCount)) {
+          tagMatchedCount = 0;
+        }
+        if (!Number.isFinite(totalRetrievedCount)) {
+          totalRetrievedCount = 0;
+        }
+        var confidenceLevel = String(metricData.confidence_level || "LOW").toUpperCase();
+        if (["HIGH", "MEDIUM", "LOW"].indexOf(confidenceLevel) === -1) {
+          confidenceLevel = "LOW";
+        }
 
         if (!parsed.insights.length) {
           html += '<p class="insight-body">' + nlToBr(answerText || "No answer returned.") + '</p>';
@@ -1125,23 +1129,28 @@
           });
         }
 
-        if (parsed.confidenceText) {
-          var confUpper = parsed.confidenceText.toUpperCase();
-          var confClass = "confidence-medium";
-          var confLabel = "MEDIUM";
-          if (confUpper.indexOf("LOW") !== -1) {
-            confClass = "confidence-low";
-            confLabel = "LOW";
-          } else if (confUpper.indexOf("HIGH") !== -1) {
-            confClass = "confidence-high";
-            confLabel = "HIGH";
-          }
-
-          html += '<div class="confidence ' + confClass + '">';
-          html += '<span class="confidence-label">' + confLabel + '</span>';
-          html += '<span>' + escapeHtml(parsed.confidenceText) + '</span>';
-          html += '</div>';
+        var confClass = "confidence-low";
+        if (confidenceLevel === "HIGH") {
+          confClass = "confidence-high";
+        } else if (confidenceLevel === "MEDIUM") {
+          confClass = "confidence-medium";
         }
+
+        var confidenceExplanation = confidenceLevel + " - " + humanize(tagMatchedCount) + " reviews matched on taxonomy tags.";
+        if (fallbackUsed) {
+          confidenceExplanation = "LOW - taxonomy matched fewer than 3 reviews, so evidence was retrieved by keyword search instead.";
+        }
+
+        var evidenceLine = fallbackUsed
+          ? "Evidence: keyword fallback - taxonomy found too few matches"
+          : "Evidence: matched on taxonomy tags";
+
+        html += '<div class="confidence ' + confClass + '">';
+        html += '<span class="confidence-label">' + confidenceLevel + '</span>';
+        html += '<span>' + escapeHtml(confidenceExplanation) + '</span>';
+        html += '</div>';
+        html += '<div class="ask-note">HIGH = 20+ tag-matched reviews. MEDIUM = 8-19. LOW = under 8, or keyword fallback used.</div>';
+        html += '<div class="ask-note">' + escapeHtml(evidenceLine) + '</div>';
 
         answerBox.innerHTML = html;
       }
@@ -1428,10 +1437,15 @@
               return;
             }
 
-            renderAnswer(result.data.answer || "", result.data.selected_tag_filters || []);
+            renderAnswer(result.data.answer || "", result.data.selected_tag_filters || [], {
+              confidence_level: result.data.confidence_level,
+              tag_matched_count: result.data.tag_matched_count,
+              total_retrieved_count: result.data.total_retrieved_count,
+              fallback_used: result.data.fallback_used
+            });
             answerMeta.textContent = "Sources used: " + humanize(valueOrDefault(result.data.sources_used, 0));
             answerMeta.style.display = "block";
-            answerFallback.textContent = result.data.fallback_used ? "Fallback retrieval used: yes" : "Fallback retrieval used: no";
+            answerFallback.textContent = "";
           })
           .catch(function (error) {
             answerBox.innerHTML = '<div class="notice-card">Couldn\'t reach the language model. Please try again in a moment.</div>';
